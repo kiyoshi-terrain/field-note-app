@@ -3,7 +3,7 @@
     "name": "field-note-app",
     "slug": "field-note-app",
     "version": "1.0.0",
-    "orientation": "portrait",
+    "orientation": "default",
     "icon": "./assets/images/icon.png",
     "scheme": "fieldnoteapp",
     "userInterfaceStyle": "automatic",
@@ -37,6 +37,12 @@
           "dark": {
             "backgroundColor": "#000000"
           }
+        }
+      ],
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "Allow Field Note to use your location for field inspections."
         }
       ]
     ],
