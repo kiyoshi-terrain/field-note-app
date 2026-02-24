@@ -259,6 +259,73 @@ export function generateMapHtml(options?: MapOptions): string {
         case 'setTileSource':
           setTileSource(cmd.source);
           break;
+        case 'addRasterOverlay':
+          addRasterOverlay(cmd.id, cmd.url).then(function(info) {
+            var message = JSON.stringify({ type: 'overlayAdded', info: info });
+            if (window.ReactNativeWebView) {
+              window.ReactNativeWebView.postMessage(message);
+            }
+          });
+          break;
+        case 'removeRasterOverlay':
+          removeRasterOverlay(cmd.id);
+          break;
+        case 'setOverlayOpacity':
+          setOverlayOpacity(cmd.id, cmd.opacity);
+          break;
+      }
+    }
+
+    function addRasterOverlay(id, url) {
+      return new Promise(function(resolve) {
+        try {
+          var p = new pmtiles.PMTiles(url);
+          p.getHeader().then(function(header) {
+            var bounds = [header.minLon, header.minLat, header.maxLon, header.maxLat];
+            var sourceId = 'overlay-' + id;
+            var layerId = 'overlay-' + id + '-layer';
+
+            if (map.getLayer(layerId)) map.removeLayer(layerId);
+            if (map.getSource(sourceId)) map.removeSource(sourceId);
+
+            map.addSource(sourceId, {
+              type: 'raster',
+              url: 'pmtiles://' + url,
+              tileSize: 256
+            });
+
+            var beforeLayerId = map.getLayer('user-location-accuracy') ? 'user-location-accuracy' : undefined;
+            map.addLayer({
+              id: layerId,
+              type: 'raster',
+              source: sourceId,
+              paint: { 'raster-opacity': 0.8 }
+            }, beforeLayerId);
+
+            map.fitBounds(bounds, { padding: 20, duration: 1500 });
+            resolve({ id: id, name: id, bounds: bounds });
+          }).catch(function(e) {
+            console.error('Failed to add raster overlay:', e);
+            resolve(null);
+          });
+        } catch(e) {
+          console.error('Failed to add raster overlay:', e);
+          resolve(null);
+        }
+      });
+    }
+
+    function removeRasterOverlay(id) {
+      var layerId = 'overlay-' + id + '-layer';
+      var sourceId = 'overlay-' + id;
+      if (map.getLayer(layerId)) map.removeLayer(layerId);
+      if (map.getSource(sourceId)) map.removeSource(sourceId);
+    }
+
+    function setOverlayOpacity(id, opacity) {
+      var layerId = 'overlay-' + id + '-layer';
+      if (map.getLayer(layerId)) {
+        map.setPaintProperty(layerId, 'raster-opacity', opacity);
       }
     }
 

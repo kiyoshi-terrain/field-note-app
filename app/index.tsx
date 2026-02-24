@@ -1,9 +1,9 @@
 import { useRef, useEffect, useCallback, useState } from 'react';
-import { StyleSheet, View, Text, TouchableOpacity, Pressable } from 'react-native';
+import { StyleSheet, View, Text, TouchableOpacity, Pressable, Platform } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import MapView from '@/components/map/MapView';
-import type { MapViewHandle, TileSource } from '@/components/map/types';
+import type { MapViewHandle, TileSource, OverlayInfo } from '@/components/map/types';
 import { useLocation } from '@/hooks/use-location';
 
 const TILE_SOURCE_OPTIONS: { id: TileSource; label: string }[] = [
@@ -20,6 +20,9 @@ export default function MapScreen() {
   const [mapLoaded, setMapLoaded] = useState(false);
   const [tileSource, setTileSource] = useState<TileSource>('osm');
   const [showLayerMenu, setShowLayerMenu] = useState(false);
+  const [overlays, setOverlays] = useState<OverlayInfo[]>([]);
+  const [showOverlayMenu, setShowOverlayMenu] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const { location, error, isLoading, getCurrentPosition } = useLocation({
     enabled: true,
@@ -57,6 +60,55 @@ export default function MapScreen() {
     setTileSource(source);
     mapRef.current?.setTileSource(source);
     setShowLayerMenu(false);
+  }, []);
+
+  const handleAddOverlay = useCallback(() => {
+    setShowOverlayMenu(false);
+    if (Platform.OS === 'web') {
+      // Create hidden file input and trigger it
+      if (!fileInputRef.current) {
+        const input = document.createElement('input');
+        input.type = 'file';
+        input.accept = '.pmtiles';
+        input.style.display = 'none';
+        input.addEventListener('change', async (e) => {
+          const file = (e.target as HTMLInputElement).files?.[0];
+          if (!file) return;
+          const blobUrl = URL.createObjectURL(file);
+          const id = file.name.replace(/\.pmtiles$/i, '');
+          const info = await mapRef.current?.addRasterOverlay(id, blobUrl);
+          if (info) {
+            info.name = file.name.replace(/\.pmtiles$/i, '');
+            info.opacity = 0.8;
+            setOverlays((prev) => [...prev.filter((o) => o.id !== id), info]);
+          }
+          input.value = '';
+        });
+        document.body.appendChild(input);
+        fileInputRef.current = input;
+      }
+      fileInputRef.current.click();
+    }
+  }, []);
+
+  const handleRemoveOverlay = useCallback((id: string) => {
+    mapRef.current?.removeRasterOverlay(id);
+    setOverlays((prev) => prev.filter((o) => o.id !== id));
+  }, []);
+
+  const handleOverlayOpacityChange = useCallback((id: string, opacity: number) => {
+    mapRef.current?.setOverlayOpacity(id, opacity);
+    setOverlays((prev) =>
+      prev.map((o) => (o.id === id ? { ...o, opacity } : o))
+    );
+  }, []);
+
+  const handleFlyToOverlay = useCallback((overlay: OverlayInfo) => {
+    const [west, south, east, north] = overlay.bounds;
+    const centerLng = (west + east) / 2;
+    const centerLat = (south + north) / 2;
+    mapRef.current?.flyToLocation(centerLng, centerLat, 15);
+    setShowOverlayMenu(false);
   }, []);
 
   const formatCoord = (value: number, isLat: boolean): string => {
@@ -137,6 +189,77 @@ export default function MapScreen() {
           ))}
         </View>
       )}
+
+      {/* Overlay menu backdrop */}
+      {showOverlayMenu && (
+        <Pressable
+          style={StyleSheet.absoluteFill}
+          onPress={() => setShowOverlayMenu(false)}
+        />
+      )}
+
+      {/* Overlay popup menu */}
+      {showOverlayMenu && (
+        <View style={[styles.layerMenu, { bottom: insets.bottom + 144 }]}>
+          <TouchableOpacity
+            style={styles.layerMenuItem}
+            onPress={handleAddOverlay}
+            activeOpacity={0.6}
+          >
+            <Ionicons name="add-circle-outline" size={16} color="#4285F4" style={{ marginRight: 6 }} />
+            <Text style={styles.layerMenuLabel}>PMTilesを追加...</Text>
+          </TouchableOpacity>
+          {overlays.map((overlay) => (
+            <View key={overlay.id}>
+              <View style={styles.overlayItem}>
+                <TouchableOpacity
+                  style={{ flex: 1 }}
+                  onPress={() => handleFlyToOverlay(overlay)}
+                  activeOpacity={0.6}
+                >
+                  <Text style={styles.layerMenuLabel} numberOfLines={1}>{overlay.name}</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  onPress={() => handleRemoveOverlay(overlay.id)}
+                  activeOpacity={0.6}
+                  hitSlop={8}
+                >
+                  <Ionicons name="close-circle" size={18} color="#FF6B6B" />
+                </TouchableOpacity>
+              </View>
+              {Platform.OS === 'web' && (
+                <View style={styles.sliderRow}>
+                  <Ionicons name="eye-outline" size={14} color="#888" />
+                  <input
+                    type="range"
+                    min="0"
+                    max="100"
+                    value={Math.round(overlay.opacity * 100)}
+                    onChange={(e: any) =>
+                      handleOverlayOpacityChange(overlay.id, Number(e.target.value) / 100)
+                    }
+                    style={{ flex: 1, margin: '0 8px', accentColor: '#4285F4' } as any}
+                  />
+                  <Text style={styles.opacityLabel}>{Math.round(overlay.opacity * 100)}%</Text>
+                </View>
+              )}
+            </View>
+          ))}
+        </View>
+      )}
+
+      {/* Overlay button */}
+      <TouchableOpacity
+        style={[styles.controlButton, { bottom: insets.bottom + 144 }]}
+        onPress={() => setShowOverlayMenu((prev) => !prev)}
+        activeOpacity={0.7}
+      >
+        <Ionicons
+          name="map"
+          size={24}
+          color={overlays.length > 0 ? '#34A853' : '#4285F4'}
+        />
+      </TouchableOpacity>
 
       {/* Layer toggle button */}
       <TouchableOpacity
@@ -241,5 +364,25 @@ const styles = StyleSheet.create({
   layerMenuLabel: {
     fontSize: 14,
     color: '#333333',
+  },
+  overlayItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    gap: 8,
+  },
+  sliderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingBottom: 8,
+    gap: 4,
+  },
+  opacityLabel: {
+    fontSize: 11,
+    color: '#888',
+    width: 32,
+    textAlign: 'right',
   },
 });

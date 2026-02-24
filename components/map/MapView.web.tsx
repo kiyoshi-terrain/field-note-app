@@ -2,8 +2,8 @@ import { useRef, useEffect, useImperativeHandle, forwardRef } from 'react';
 import { StyleSheet, View } from 'react-native';
 import maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
-import { Protocol } from 'pmtiles';
-import type { MapViewProps, MapViewHandle, TileSource } from './types';
+import { Protocol, PMTiles } from 'pmtiles';
+import type { MapViewProps, MapViewHandle, TileSource, OverlayInfo } from './types';
 
 const DEFAULT_CENTER: [number, number] = [139.6917, 35.6895];
 const DEFAULT_ZOOM = 13;
@@ -131,6 +131,75 @@ export default forwardRef<MapViewHandle, MapViewProps>(
           if (map.getLayer(layerId)) {
             map.setLayoutProperty(layerId, 'visibility', 'visible');
           }
+        }
+      },
+
+      async addRasterOverlay(id: string, pmtilesUrl: string): Promise<OverlayInfo | null> {
+        const map = mapRef.current;
+        if (!map) return null;
+
+        try {
+          // Read PMTiles header to get bounds and metadata
+          const p = new PMTiles(pmtilesUrl);
+          const header = await p.getHeader();
+
+          const bounds: [number, number, number, number] = [
+            header.minLon, header.minLat, header.maxLon, header.maxLat,
+          ];
+
+          const sourceId = `overlay-${id}`;
+          const layerId = `overlay-${id}-layer`;
+
+          // Remove existing overlay with same id
+          if (map.getLayer(layerId)) map.removeLayer(layerId);
+          if (map.getSource(sourceId)) map.removeSource(sourceId);
+
+          // Add as raster source via pmtiles protocol
+          map.addSource(sourceId, {
+            type: 'raster',
+            url: `pmtiles://${pmtilesUrl}`,
+            tileSize: 256,
+          });
+
+          // Insert overlay layer below GPS layers
+          const beforeLayerId = map.getLayer('user-location-accuracy') ? 'user-location-accuracy' : undefined;
+
+          map.addLayer({
+            id: layerId,
+            type: 'raster',
+            source: sourceId,
+            paint: { 'raster-opacity': 0.8 },
+          }, beforeLayerId);
+
+          // Fly to overlay bounds
+          map.fitBounds(bounds, { padding: 20, duration: 1500 });
+
+          const name = id;
+          return { id, name, bounds, opacity: 0.8 };
+        } catch (e) {
+          console.error('Failed to add raster overlay:', e);
+          return null;
+        }
+      },
+
+      removeRasterOverlay(id: string) {
+        const map = mapRef.current;
+        if (!map) return;
+
+        const layerId = `overlay-${id}-layer`;
+        const sourceId = `overlay-${id}`;
+
+        if (map.getLayer(layerId)) map.removeLayer(layerId);
+        if (map.getSource(sourceId)) map.removeSource(sourceId);
+      },
+
+      setOverlayOpacity(id: string, opacity: number) {
+        const map = mapRef.current;
+        if (!map) return;
+
+        const layerId = `overlay-${id}-layer`;
+        if (map.getLayer(layerId)) {
+          map.setPaintProperty(layerId, 'raster-opacity', opacity);
         }
       },
     }), []);
