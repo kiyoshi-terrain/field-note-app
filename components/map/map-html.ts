@@ -273,6 +273,12 @@ export function generateMapHtml(options?: MapOptions): string {
         case 'setOverlayOpacity':
           setOverlayOpacity(cmd.id, cmd.opacity);
           break;
+        case 'toggleOverlayVisibility':
+          toggleOverlayVisibility(cmd.id, cmd.visible);
+          break;
+        case 'fitToBounds':
+          map.fitBounds(cmd.bounds, { padding: 40, duration: 1500 });
+          break;
       }
     }
 
@@ -326,6 +332,13 @@ export function generateMapHtml(options?: MapOptions): string {
       var layerId = 'overlay-' + id + '-layer';
       if (map.getLayer(layerId)) {
         map.setPaintProperty(layerId, 'raster-opacity', opacity);
+      }
+    }
+
+    function toggleOverlayVisibility(id, visible) {
+      var layerId = 'overlay-' + id + '-layer';
+      if (map.getLayer(layerId)) {
+        map.setLayoutProperty(layerId, 'visibility', visible ? 'visible' : 'none');
       }
     }
 

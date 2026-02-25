@@ -202,6 +202,23 @@ export default forwardRef<MapViewHandle, MapViewProps>(
           map.setPaintProperty(layerId, 'raster-opacity', opacity);
         }
       },
+
+      toggleOverlayVisibility(id: string, visible: boolean) {
+        const map = mapRef.current;
+        if (!map) return;
+
+        const layerId = `overlay-${id}-layer`;
+        if (map.getLayer(layerId)) {
+          map.setLayoutProperty(layerId, 'visibility', visible ? 'visible' : 'none');
+        }
+      },
+
+      fitToBounds(bounds: [number, number, number, number]) {
+        const map = mapRef.current;
+        if (!map) return;
+
+        map.fitBounds(bounds, { padding: 40, duration: 1500 });
+      },
     }), []);
 
     useEffect(() => {

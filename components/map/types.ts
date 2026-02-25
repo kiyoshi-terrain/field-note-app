@@ -17,6 +17,15 @@ export interface OverlayInfo {
   name: string;
   bounds: [number, number, number, number]; // [west, south, east, north]
   opacity: number; // 0.0 - 1.0
+  visible: boolean; // true = visible, false = hidden
+  groupId: string; // group ID (default: 'default')
+}
+
+export interface OverlayGroup {
+  id: string; // 'default', 'shikoku-2024', etc.
+  name: string; // '未分類', '四国調査 2024', etc.
+  expanded: boolean; // UI collapse state
+  order: number; // display order
 }
 
 export interface MapViewHandle {
@@ -27,4 +36,6 @@ export interface MapViewHandle {
   addRasterOverlay: (id: string, pmtilesUrl: string) => Promise<OverlayInfo | null>;
   removeRasterOverlay: (id: string) => void;
   setOverlayOpacity: (id: string, opacity: number) => void;
+  toggleOverlayVisibility: (id: string, visible: boolean) => void;
+  fitToBounds: (bounds: [number, number, number, number]) => void;
 }

@@ -58,6 +58,12 @@ export default forwardRef<MapViewHandle, MapViewProps>(
       setOverlayOpacity(id: string, opacity: number) {
         sendCommand({ type: 'setOverlayOpacity', id, opacity });
       },
+      toggleOverlayVisibility(id: string, visible: boolean) {
+        sendCommand({ type: 'toggleOverlayVisibility', id, visible });
+      },
+      fitToBounds(bounds: [number, number, number, number]) {
+        sendCommand({ type: 'fitToBounds', bounds });
+      },
     }), [sendCommand]);
 
     const handleMessage = useCallback((event: WebViewMessageEvent) => {
