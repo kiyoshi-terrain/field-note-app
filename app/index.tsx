@@ -902,9 +902,9 @@ const styles = StyleSheet.create({
     position: 'absolute',
     left: 0,
     width: SIDE_PANEL_WIDTH,
-    backgroundColor: 'rgba(245, 245, 245, 0.65)',
-    backdropFilter: 'blur(20px)',
-    WebkitBackdropFilter: 'blur(20px)',
+    backgroundColor: 'rgba(255, 255, 255, 0.12)',
+    backdropFilter: 'blur(10px)',
+    WebkitBackdropFilter: 'blur(10px)',
     zIndex: 30,
     boxShadow: '2px 0px 16px rgba(0, 0, 0, 0.12), inset 0 0 0 1px rgba(255, 255, 255, 0.3)',
     borderRightWidth: 1,
@@ -915,9 +915,9 @@ const styles = StyleSheet.create({
   // ─── Full-screen modal (mobile) — glassmorphism
   modalContainer: {
     flex: 1,
-    backgroundColor: 'rgba(245, 245, 245, 0.7)',
-    backdropFilter: 'blur(20px)',
-    WebkitBackdropFilter: 'blur(20px)',
+    backgroundColor: 'rgba(255, 255, 255, 0.12)',
+    backdropFilter: 'blur(10px)',
+    WebkitBackdropFilter: 'blur(10px)',
   },
 
   // ─── Shared panel styles ──────────────────────
@@ -927,9 +927,9 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingHorizontal: 16,
     paddingVertical: 12,
-    backgroundColor: 'rgba(255, 255, 255, 0.45)',
+    backgroundColor: 'rgba(255, 255, 255, 0.08)',
     borderBottomWidth: 1,
-    borderBottomColor: 'rgba(255, 255, 255, 0.5)',
+    borderBottomColor: 'rgba(255, 255, 255, 0.2)',
   },
   panelTitle: {
     fontSize: 18,
@@ -944,9 +944,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 10,
     gap: 10,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
     borderBottomWidth: 1,
-    borderBottomColor: '#E0E0E0',
+    borderBottomColor: 'rgba(255, 255, 255, 0.2)',
   },
   actionButton: {
     flexDirection: 'row',
@@ -978,9 +978,9 @@ const styles = StyleSheet.create({
   // ─── Group — glass cards ──────────────────────
   groupContainer: {
     marginBottom: 12,
-    backgroundColor: 'rgba(255, 255, 255, 0.4)',
-    backdropFilter: 'blur(12px)',
-    WebkitBackdropFilter: 'blur(12px)',
+    backgroundColor: 'rgba(255, 255, 255, 0.06)',
+    backdropFilter: 'blur(8px)',
+    WebkitBackdropFilter: 'blur(8px)',
     borderRadius: 10,
     overflow: 'hidden',
     boxShadow: '0px 2px 8px rgba(0, 0, 0, 0.06), inset 0 0 0 1px rgba(255, 255, 255, 0.4)',
@@ -992,9 +992,9 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingHorizontal: 12,
     paddingVertical: 12,
-    backgroundColor: 'rgba(255, 255, 255, 0.3)',
+    backgroundColor: 'rgba(255, 255, 255, 0.05)',
     borderBottomWidth: 1,
-    borderBottomColor: 'rgba(255, 255, 255, 0.4)',
+    borderBottomColor: 'rgba(255, 255, 255, 0.15)',
   },
   groupHeaderLeft: {
     flexDirection: 'row',
