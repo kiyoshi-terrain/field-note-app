@@ -16,6 +16,8 @@ export interface StoredOverlay {
   visible: boolean;
   groupId: string;
   timestamp: number;
+  /** If set, overlay is loaded directly from this URL (data field is empty). */
+  url?: string;
 }
 
 export interface StoredGroup {
@@ -58,6 +60,7 @@ function normalizeOverlay(record: any): StoredOverlay {
     visible: record.visible ?? true,
     groupId: record.groupId ?? 'default',
     timestamp: record.timestamp ?? Date.now(),
+    url: record.url ?? undefined,
   };
 }
 
@@ -83,6 +86,33 @@ export async function saveOverlay(
       groupId,
       timestamp: Date.now(),
     } satisfies StoredOverlay);
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+}
+
+/** Save a URL-based overlay (no binary data stored) */
+export async function saveUrlOverlay(
+  id: string,
+  filename: string,
+  url: string,
+  opacity: number = 0.8,
+  visible: boolean = true,
+  groupId: string = 'default',
+): Promise<void> {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(OVERLAY_STORE, 'readwrite');
+    tx.objectStore(OVERLAY_STORE).put({
+      id,
+      filename,
+      data: new ArrayBuffer(0),
+      opacity,
+      visible,
+      groupId,
+      timestamp: Date.now(),
+      url,
+    } as StoredOverlay);
     tx.oncomplete = () => resolve();
     tx.onerror = () => reject(tx.error);
   });

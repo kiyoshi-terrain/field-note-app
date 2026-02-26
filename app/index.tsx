@@ -18,6 +18,7 @@ import type { MapViewHandle, TileSource, OverlayInfo, OverlayGroup } from '@/com
 import { useLocation } from '@/hooks/use-location';
 import {
   saveOverlay,
+  saveUrlOverlay,
   loadAllOverlays,
   deleteOverlay as deleteOverlayFromDB,
   updateOverlayOpacity,
@@ -90,6 +91,10 @@ export default function MapScreen() {
   // Group menu
   const [groupMenuId, setGroupMenuId] = useState<string | null>(null);
 
+  // URL overlay dialog
+  const [showUrlDialog, setShowUrlDialog] = useState(false);
+  const [urlInput, setUrlInput] = useState('');
+
   // Google Drive sync
   const [googleUser, setGoogleUser] = useState<DriveUser | null>(null);
   const [isSyncing, setIsSyncing] = useState(false);
@@ -142,9 +147,11 @@ export default function MapScreen() {
         // Restore overlays
         const stored = await loadAllOverlays();
         for (const entry of stored) {
-          const blob = new Blob([entry.data], { type: 'application/octet-stream' });
-          const blobUrl = URL.createObjectURL(blob);
-          const info = await mapRef.current?.addRasterOverlay(entry.id, blobUrl);
+          // URL-based overlay: load directly from URL
+          const overlayUrl = entry.url
+            ? entry.url
+            : URL.createObjectURL(new Blob([entry.data], { type: 'application/octet-stream' }));
+          const info = await mapRef.current?.addRasterOverlay(entry.id, overlayUrl);
           if (info) {
             info.name = entry.filename;
             info.opacity = entry.opacity;
@@ -352,6 +359,37 @@ export default function MapScreen() {
     setRenameOverlayName('');
   }, [renameOverlayId, renameOverlayName]);
 
+  // ─── URL overlay handler ─────────────────────────────────
+
+  const handleAddUrlOverlay = useCallback(async () => {
+    const url = urlInput.trim();
+    if (!url) return;
+
+    try {
+      // Derive a name from the URL
+      const urlObj = new URL(url);
+      const pathSegments = urlObj.pathname.split('/').filter(Boolean);
+      const filename = pathSegments[pathSegments.length - 1]?.replace(/\.pmtiles$/i, '') || 'url-overlay';
+      const id = `url-${filename}-${Date.now()}`;
+
+      const info = await mapRef.current?.addRasterOverlay(id, url);
+      if (info) {
+        info.name = filename;
+        info.opacity = 0.8;
+        info.visible = true;
+        info.groupId = 'default';
+        setOverlays((prev) => [...prev.filter((o) => o.id !== id), info]);
+        saveUrlOverlay(id, filename, url, 0.8, true, 'default').catch(console.error);
+      }
+    } catch (err) {
+      console.error('Failed to add URL overlay:', err);
+      alert('URLからの読み込みに失敗しました。URLを確認してください。');
+    }
+
+    setUrlInput('');
+    setShowUrlDialog(false);
+  }, [urlInput]);
+
   // ─── Google Drive handlers ──────────────────────────────
 
   const handleGoogleSignIn = useCallback(async () => {
@@ -393,8 +431,9 @@ export default function MapScreen() {
       let uploaded = 0;
       let downloaded = 0;
 
-      // 3. Upload local files that aren't on Drive
+      // 3. Upload local files that aren't on Drive (skip URL-based overlays)
       for (const local of localOverlays) {
+        if (local.url) continue; // URL-based overlays have no binary data to upload
         const driveFilename = local.filename + '.pmtiles';
         if (!remoteByName.has(driveFilename)) {
           setSyncMessage(`アップロード中: ${local.filename}`);
@@ -466,15 +505,17 @@ export default function MapScreen() {
 
       const syncMeta: SyncMetadata = {
         version: 1,
-        overlays: finalOverlays.map((o) => ({
-          id: o.id,
-          filename: o.filename,
-          opacity: o.opacity,
-          visible: o.visible,
-          groupId: o.groupId,
-          driveFileId: remoteFileMap.get(o.filename)?.id ?? '',
-          timestamp: o.timestamp,
-        })),
+        overlays: finalOverlays
+          .filter((o) => !o.url) // Exclude URL-based overlays from Drive metadata
+          .map((o) => ({
+            id: o.id,
+            filename: o.filename,
+            opacity: o.opacity,
+            visible: o.visible,
+            groupId: o.groupId,
+            driveFileId: remoteFileMap.get(o.filename)?.id ?? '',
+            timestamp: o.timestamp,
+          })),
         groups: (await loadAllGroups()).map((g) => ({
           id: g.id,
           name: g.name,
@@ -616,6 +657,14 @@ export default function MapScreen() {
         >
           <Ionicons name="folder-open-outline" size={18} color="#4285F4" />
           <Text style={[styles.actionButtonText, styles.actionButtonTextSecondary]}>グループ追加</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.actionButton, { backgroundColor: 'rgba(255,149,0,0.6)' }]}
+          onPress={() => { setUrlInput(''); setShowUrlDialog(true); }}
+          activeOpacity={0.7}
+        >
+          <Ionicons name="link-outline" size={18} color="#FFF" />
+          <Text style={styles.actionButtonText}>URLから追加</Text>
         </TouchableOpacity>
         {Platform.OS === 'web' && googleUser && (
           <TouchableOpacity
@@ -899,6 +948,46 @@ export default function MapScreen() {
                 activeOpacity={0.6}
               >
                 <Text style={styles.dialogBtnTextPrimary}>変更</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      )}
+
+      {/* URL overlay dialog */}
+      {showUrlDialog && (
+        <View style={styles.dialogOverlay}>
+          <View style={styles.dialogBox}>
+            <Text style={styles.dialogTitle}>URLからPMTilesを追加</Text>
+            <Text style={{ color: 'rgba(255,255,255,0.6)', fontSize: 12, marginBottom: 8 }}>
+              ローカルサーバーやネットワーク上のPMTilesのURLを入力
+            </Text>
+            <TextInput
+              style={styles.dialogInput}
+              value={urlInput}
+              onChangeText={setUrlInput}
+              placeholder="https://example.com/map.pmtiles"
+              placeholderTextColor="rgba(255,255,255,0.3)"
+              autoCapitalize="none"
+              autoCorrect={false}
+              keyboardType="url"
+              autoFocus
+              onSubmitEditing={handleAddUrlOverlay}
+            />
+            <View style={styles.dialogActions}>
+              <TouchableOpacity
+                onPress={() => { setShowUrlDialog(false); setUrlInput(''); }}
+                style={styles.dialogBtn}
+                activeOpacity={0.6}
+              >
+                <Text style={styles.dialogBtnTextCancel}>キャンセル</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={handleAddUrlOverlay}
+                style={[styles.dialogBtn, styles.dialogBtnPrimary]}
+                activeOpacity={0.6}
+              >
+                <Text style={styles.dialogBtnTextPrimary}>追加</Text>
               </TouchableOpacity>
             </View>
           </View>
