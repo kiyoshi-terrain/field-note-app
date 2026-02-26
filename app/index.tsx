@@ -162,24 +162,42 @@ export default function MapScreen() {
         const input = document.createElement('input');
         input.type = 'file';
         input.accept = '.pmtiles';
+        input.multiple = true;
         input.style.display = 'none';
         input.addEventListener('change', async (e) => {
-          const file = (e.target as HTMLInputElement).files?.[0];
-          if (!file) return;
+          const files = Array.from((e.target as HTMLInputElement).files || []);
+          if (files.length === 0) return;
 
-          const arrayBuffer = await file.arrayBuffer();
-          const blob = new Blob([arrayBuffer], { type: 'application/octet-stream' });
-          const blobUrl = URL.createObjectURL(blob);
-          const id = file.name.replace(/\.pmtiles$/i, '');
+          // Build set of existing IDs to skip duplicates (query IndexedDB for fresh data)
+          const stored = await loadAllOverlays();
+          const existingIds = new Set(stored.map((o) => o.id));
 
-          const info = await mapRef.current?.addRasterOverlay(id, blobUrl);
-          if (info) {
-            info.name = file.name.replace(/\.pmtiles$/i, '');
-            info.opacity = 0.8;
-            info.visible = true;
-            info.groupId = 'default';
-            setOverlays((prev) => [...prev.filter((o) => o.id !== id), info]);
-            saveOverlay(id, info.name, arrayBuffer, 0.8, true, 'default').catch(console.error);
+          for (const file of files) {
+            try {
+              const id = file.name.replace(/\.pmtiles$/i, '');
+
+              if (existingIds.has(id)) {
+                console.warn(`Overlay "${id}" already exists, skipping`);
+                continue;
+              }
+
+              const arrayBuffer = await file.arrayBuffer();
+              const blob = new Blob([arrayBuffer], { type: 'application/octet-stream' });
+              const blobUrl = URL.createObjectURL(blob);
+
+              const info = await mapRef.current?.addRasterOverlay(id, blobUrl);
+              if (info) {
+                info.name = file.name.replace(/\.pmtiles$/i, '');
+                info.opacity = 0.8;
+                info.visible = true;
+                info.groupId = 'default';
+                setOverlays((prev) => [...prev.filter((o) => o.id !== id), info]);
+                saveOverlay(id, info.name, arrayBuffer, 0.8, true, 'default').catch(console.error);
+                existingIds.add(id);
+              }
+            } catch (err) {
+              console.error(`Failed to add overlay: ${file.name}`, err);
+            }
           }
           input.value = '';
         });
