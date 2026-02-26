@@ -902,22 +902,22 @@ const styles = StyleSheet.create({
     position: 'absolute',
     left: 0,
     width: SIDE_PANEL_WIDTH,
-    backgroundColor: 'rgba(255, 255, 255, 0.12)',
-    backdropFilter: 'blur(10px)',
-    WebkitBackdropFilter: 'blur(10px)',
+    backgroundColor: 'rgba(0, 0, 0, 0.25)',
+    backdropFilter: 'blur(12px)',
+    WebkitBackdropFilter: 'blur(12px)',
     zIndex: 30,
-    boxShadow: '2px 0px 16px rgba(0, 0, 0, 0.12), inset 0 0 0 1px rgba(255, 255, 255, 0.3)',
+    boxShadow: '2px 0px 16px rgba(0, 0, 0, 0.3), inset 0 0 0 1px rgba(255, 255, 255, 0.08)',
     borderRightWidth: 1,
-    borderRightColor: 'rgba(255, 255, 255, 0.4)',
+    borderRightColor: 'rgba(255, 255, 255, 0.1)',
     elevation: 8,
   },
 
   // ─── Full-screen modal (mobile) — glassmorphism
   modalContainer: {
     flex: 1,
-    backgroundColor: 'rgba(255, 255, 255, 0.12)',
-    backdropFilter: 'blur(10px)',
-    WebkitBackdropFilter: 'blur(10px)',
+    backgroundColor: 'rgba(0, 0, 0, 0.25)',
+    backdropFilter: 'blur(12px)',
+    WebkitBackdropFilter: 'blur(12px)',
   },
 
   // ─── Shared panel styles ──────────────────────
@@ -927,14 +927,14 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingHorizontal: 16,
     paddingVertical: 12,
-    backgroundColor: 'rgba(255, 255, 255, 0.08)',
+    backgroundColor: 'rgba(255, 255, 255, 0.06)',
     borderBottomWidth: 1,
-    borderBottomColor: 'rgba(255, 255, 255, 0.2)',
+    borderBottomColor: 'rgba(255, 255, 255, 0.1)',
   },
   panelTitle: {
     fontSize: 18,
     fontWeight: '700',
-    color: '#333',
+    color: '#FFFFFF',
   },
   panelCloseBtn: {
     padding: 4,
@@ -944,9 +944,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 10,
     gap: 10,
-    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    backgroundColor: 'rgba(255, 255, 255, 0.06)',
     borderBottomWidth: 1,
-    borderBottomColor: 'rgba(255, 255, 255, 0.2)',
+    borderBottomColor: 'rgba(255, 255, 255, 0.1)',
   },
   actionButton: {
     flexDirection: 'row',
@@ -978,12 +978,12 @@ const styles = StyleSheet.create({
   // ─── Group — glass cards ──────────────────────
   groupContainer: {
     marginBottom: 12,
-    backgroundColor: 'rgba(255, 255, 255, 0.06)',
+    backgroundColor: 'rgba(0, 0, 0, 0.15)',
     backdropFilter: 'blur(8px)',
     WebkitBackdropFilter: 'blur(8px)',
     borderRadius: 10,
     overflow: 'hidden',
-    boxShadow: '0px 2px 8px rgba(0, 0, 0, 0.06), inset 0 0 0 1px rgba(255, 255, 255, 0.4)',
+    boxShadow: '0px 2px 8px rgba(0, 0, 0, 0.15), inset 0 0 0 1px rgba(255, 255, 255, 0.08)',
     elevation: 2,
   },
   groupHeader: {
@@ -992,9 +992,9 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingHorizontal: 12,
     paddingVertical: 12,
-    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+    backgroundColor: 'rgba(255, 255, 255, 0.04)',
     borderBottomWidth: 1,
-    borderBottomColor: 'rgba(255, 255, 255, 0.15)',
+    borderBottomColor: 'rgba(255, 255, 255, 0.08)',
   },
   groupHeaderLeft: {
     flexDirection: 'row',
@@ -1005,20 +1005,20 @@ const styles = StyleSheet.create({
   groupName: {
     fontSize: 15,
     fontWeight: '600',
-    color: '#333',
+    color: '#FFFFFF',
   },
   groupCount: {
     fontSize: 12,
-    color: '#999',
+    color: 'rgba(255, 255, 255, 0.5)',
     marginLeft: 4,
   },
   groupMenuBtn: {
     padding: 4,
   },
   groupContextMenu: {
-    backgroundColor: '#FFF',
+    backgroundColor: 'rgba(30, 30, 30, 0.9)',
     borderBottomWidth: 1,
-    borderBottomColor: '#F0F0F0',
+    borderBottomColor: 'rgba(255, 255, 255, 0.1)',
     paddingVertical: 4,
     paddingHorizontal: 8,
   },
@@ -1031,10 +1031,10 @@ const styles = StyleSheet.create({
   },
   contextMenuText: {
     fontSize: 14,
-    color: '#333',
+    color: '#FFFFFF',
   },
   emptyGroupText: {
-    color: '#BBB',
+    color: 'rgba(255, 255, 255, 0.4)',
     fontSize: 13,
     textAlign: 'center',
     paddingVertical: 16,
@@ -1045,7 +1045,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 8,
     borderBottomWidth: 1,
-    borderBottomColor: '#F0F0F0',
+    borderBottomColor: 'rgba(255, 255, 255, 0.08)',
   },
   overlayCardHidden: {
     opacity: 0.5,
@@ -1064,10 +1064,10 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 14,
     fontWeight: '500',
-    color: '#333',
+    color: '#FFFFFF',
   },
   overlayNameHidden: {
-    color: '#BBB',
+    color: 'rgba(255, 255, 255, 0.35)',
   },
   overlayActionBtn: {
     padding: 6,
@@ -1083,7 +1083,7 @@ const styles = StyleSheet.create({
   },
   opacityLabel: {
     fontSize: 11,
-    color: '#888',
+    color: 'rgba(255, 255, 255, 0.5)',
     width: 32,
     textAlign: 'right',
   },
@@ -1093,12 +1093,12 @@ const styles = StyleSheet.create({
     position: 'absolute',
     top: 36,
     right: 0,
-    backgroundColor: '#FFF',
+    backgroundColor: 'rgba(30, 30, 30, 0.9)',
     borderRadius: 8,
     paddingVertical: 4,
     minWidth: 160,
     zIndex: 100,
-    boxShadow: '0px 2px 8px rgba(0, 0, 0, 0.2)',
+    boxShadow: '0px 2px 8px rgba(0, 0, 0, 0.4)',
     elevation: 8,
   },
   moveGroupItem: {
@@ -1110,7 +1110,7 @@ const styles = StyleSheet.create({
   },
   moveGroupText: {
     fontSize: 13,
-    color: '#333',
+    color: '#FFFFFF',
   },
 
   // ─── Dialog ───────────────────────────────────
