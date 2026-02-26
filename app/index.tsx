@@ -28,6 +28,20 @@ import {
   loadAllGroups,
   deleteGroup as deleteGroupFromDB,
 } from '@/lib/overlay-store';
+import {
+  initGoogleAuth,
+  signIn as googleSignIn,
+  signOut as googleSignOut,
+  isSignedIn as googleIsSignedIn,
+  getUser,
+  listPMTilesFiles,
+  downloadPMTiles,
+  uploadPMTiles,
+  uploadMetadata,
+  downloadMetadata,
+  type DriveUser,
+  type SyncMetadata,
+} from '@/lib/google-drive';
 
 const TILE_SOURCE_OPTIONS: { id: TileSource; label: string }[] = [
   { id: 'osm', label: 'OSM' },
@@ -76,6 +90,11 @@ export default function MapScreen() {
   // Group menu
   const [groupMenuId, setGroupMenuId] = useState<string | null>(null);
 
+  // Google Drive sync
+  const [googleUser, setGoogleUser] = useState<DriveUser | null>(null);
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [syncMessage, setSyncMessage] = useState<string | null>(null);
+
   const { location, error, isLoading, getCurrentPosition } = useLocation({
     enabled: true,
     distanceInterval: 5,
@@ -92,6 +111,12 @@ export default function MapScreen() {
       );
     }
   }, [location, mapLoaded]);
+
+  // Initialise Google Identity Services
+  useEffect(() => {
+    if (Platform.OS !== 'web') return;
+    initGoogleAuth().catch(console.error);
+  }, []);
 
   // Restore persisted overlays & groups when map is loaded
   useEffect(() => {
@@ -199,6 +224,12 @@ export default function MapScreen() {
                 setOverlays((prev) => [...prev.filter((o) => o.id !== id), info]);
                 saveOverlay(id, info.name, arrayBuffer, 0.8, true, 'default').catch(console.error);
                 existingIds.add(id);
+                // Auto-upload to Google Drive if signed in
+                if (googleIsSignedIn()) {
+                  uploadPMTiles(file.name, arrayBuffer).catch((err) =>
+                    console.error('Drive auto-upload failed:', err),
+                  );
+                }
               }
             } catch (err) {
               console.error(`Failed to add overlay: ${file.name}`, err);
@@ -321,6 +352,150 @@ export default function MapScreen() {
     setRenameOverlayName('');
   }, [renameOverlayId, renameOverlayName]);
 
+  // ─── Google Drive handlers ──────────────────────────────
+
+  const handleGoogleSignIn = useCallback(async () => {
+    try {
+      const user = await googleSignIn();
+      setGoogleUser(user);
+    } catch (e) {
+      console.error('Google sign-in failed:', e);
+    }
+  }, []);
+
+  const handleGoogleSignOut = useCallback(() => {
+    googleSignOut();
+    setGoogleUser(null);
+  }, []);
+
+  const handleSync = useCallback(async () => {
+    if (!googleIsSignedIn() || isSyncing) return;
+    setIsSyncing(true);
+    setSyncMessage('同期中...');
+
+    try {
+      // 1. Get remote file list & metadata
+      const remoteFiles = await listPMTilesFiles();
+      const remoteMeta = await downloadMetadata();
+
+      // 2. Get local overlays
+      const localOverlays = await loadAllOverlays();
+      const localGroups = await loadAllGroups();
+
+      // Build lookup maps
+      const remoteByName = new Map(remoteFiles.map((f) => [f.name, f]));
+      const localByName = new Map(localOverlays.map((o) => [o.filename + '.pmtiles', o]));
+      // Metadata lookup for driveFileId
+      const metaByFilename = new Map(
+        (remoteMeta?.overlays || []).map((m) => [m.filename, m]),
+      );
+
+      let uploaded = 0;
+      let downloaded = 0;
+
+      // 3. Upload local files that aren't on Drive
+      for (const local of localOverlays) {
+        const driveFilename = local.filename + '.pmtiles';
+        if (!remoteByName.has(driveFilename)) {
+          setSyncMessage(`アップロード中: ${local.filename}`);
+          await uploadPMTiles(driveFilename, local.data);
+          uploaded++;
+        }
+      }
+
+      // 4. Download remote files that aren't local
+      const freshRemoteFiles = uploaded > 0 ? await listPMTilesFiles() : remoteFiles;
+      for (const remote of freshRemoteFiles) {
+        const localName = remote.name.replace(/\.pmtiles$/i, '');
+        if (!localByName.has(remote.name)) {
+          setSyncMessage(`ダウンロード中: ${localName}`);
+          const data = await downloadPMTiles(remote.id);
+
+          // Save to IndexedDB
+          const meta = metaByFilename.get(localName);
+          await saveOverlay(
+            localName,
+            localName,
+            data,
+            meta?.opacity ?? 0.8,
+            meta?.visible ?? true,
+            meta?.groupId ?? 'default',
+          );
+
+          // Add to map
+          if (mapRef.current) {
+            const blob = new Blob([data], { type: 'application/octet-stream' });
+            const blobUrl = URL.createObjectURL(blob);
+            const info = await mapRef.current.addRasterOverlay(localName, blobUrl);
+            if (info) {
+              info.name = localName;
+              info.opacity = meta?.opacity ?? 0.8;
+              info.visible = meta?.visible ?? true;
+              info.groupId = meta?.groupId ?? 'default';
+              mapRef.current.setOverlayOpacity(localName, info.opacity);
+              if (!info.visible) {
+                mapRef.current.toggleOverlayVisibility(localName, false);
+              }
+              setOverlays((prev) => [...prev.filter((o) => o.id !== localName), info]);
+            }
+          }
+
+          downloaded++;
+        }
+      }
+
+      // 5. Sync metadata (groups + overlay metadata)
+      // Re-read current state after sync
+      const finalOverlays = await loadAllOverlays();
+      const finalRemoteFiles = await listPMTilesFiles();
+      const remoteFileMap = new Map(finalRemoteFiles.map((f) => [f.name.replace(/\.pmtiles$/i, ''), f]));
+
+      // Also sync groups from remote metadata
+      if (remoteMeta?.groups && localGroups.length <= 1) {
+        // Import remote groups if local has only default
+        for (const rg of remoteMeta.groups) {
+          if (rg.id !== 'default') {
+            await saveGroup({ id: rg.id, name: rg.name, expanded: rg.expanded, order: rg.order });
+            setOverlayGroups((prev) => {
+              if (prev.some((g) => g.id === rg.id)) return prev;
+              return [...prev.filter((g) => g.id !== 'default'), rg, prev.find((g) => g.id === 'default') ?? DEFAULT_GROUP];
+            });
+          }
+        }
+      }
+
+      const syncMeta: SyncMetadata = {
+        version: 1,
+        overlays: finalOverlays.map((o) => ({
+          id: o.id,
+          filename: o.filename,
+          opacity: o.opacity,
+          visible: o.visible,
+          groupId: o.groupId,
+          driveFileId: remoteFileMap.get(o.filename)?.id ?? '',
+          timestamp: o.timestamp,
+        })),
+        groups: (await loadAllGroups()).map((g) => ({
+          id: g.id,
+          name: g.name,
+          expanded: g.expanded,
+          order: g.order,
+        })),
+        lastSync: Date.now(),
+      };
+      await uploadMetadata(syncMeta);
+
+      setSyncMessage(`完了！ ↑${uploaded} ↓${downloaded}`);
+      setTimeout(() => setSyncMessage(null), 3000);
+    } catch (e) {
+      console.error('Sync failed:', e);
+      setSyncMessage('同期エラー');
+      setTimeout(() => setSyncMessage(null), 3000);
+    } finally {
+      setIsSyncing(false);
+    }
+  }, [isSyncing, overlayGroups]);
+
   const handleDeleteGroup = useCallback((groupId: string) => {
     if (groupId === 'default') return;
 
@@ -369,15 +544,57 @@ export default function MapScreen() {
       {/* Header */}
       <View style={styles.panelHeader}>
         <Text style={styles.panelTitle}>レイヤー管理</Text>
-        <TouchableOpacity
-          onPress={() => setShowLayerPanel(false)}
-          activeOpacity={0.6}
-          hitSlop={12}
-          style={styles.panelCloseBtn}
-        >
-          <Ionicons name="close" size={28} color="#333" />
-        </TouchableOpacity>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+          {Platform.OS === 'web' && (
+            <TouchableOpacity
+              onPress={googleUser ? handleGoogleSignOut : handleGoogleSignIn}
+              activeOpacity={0.6}
+              hitSlop={8}
+              style={{
+                flexDirection: 'row',
+                alignItems: 'center',
+                gap: 4,
+                paddingHorizontal: 8,
+                paddingVertical: 4,
+                borderRadius: 12,
+                backgroundColor: googleUser ? 'rgba(66,133,244,0.15)' : 'rgba(255,255,255,0.1)',
+              }}
+            >
+              <Ionicons
+                name={googleUser ? 'person-circle' : 'logo-google'}
+                size={20}
+                color={googleUser ? '#4285F4' : '#FFF'}
+              />
+              {googleUser && (
+                <Text style={{ color: '#4285F4', fontSize: 11, maxWidth: 100 }} numberOfLines={1}>
+                  {googleUser.name}
+                </Text>
+              )}
+            </TouchableOpacity>
+          )}
+          <TouchableOpacity
+            onPress={() => setShowLayerPanel(false)}
+            activeOpacity={0.6}
+            hitSlop={12}
+            style={styles.panelCloseBtn}
+          >
+            <Ionicons name="close" size={28} color="#333" />
+          </TouchableOpacity>
+        </View>
       </View>
+
+      {/* Sync message */}
+      {syncMessage && (
+        <View style={{
+          paddingHorizontal: 12,
+          paddingVertical: 6,
+          backgroundColor: isSyncing ? 'rgba(66,133,244,0.2)' : 'rgba(52,199,89,0.2)',
+        }}>
+          <Text style={{ color: '#FFF', fontSize: 12, textAlign: 'center' }}>
+            {syncMessage}
+          </Text>
+        </View>
+      )}
 
       {/* Action bar */}
       <View style={styles.actionBar}>
@@ -400,6 +617,17 @@ export default function MapScreen() {
           <Ionicons name="folder-open-outline" size={18} color="#4285F4" />
           <Text style={[styles.actionButtonText, styles.actionButtonTextSecondary]}>グループ追加</Text>
         </TouchableOpacity>
+        {Platform.OS === 'web' && googleUser && (
+          <TouchableOpacity
+            style={[styles.actionButton, { backgroundColor: isSyncing ? 'rgba(66,133,244,0.3)' : 'rgba(66,133,244,0.6)' }]}
+            onPress={handleSync}
+            activeOpacity={0.7}
+            disabled={isSyncing}
+          >
+            <Ionicons name={isSyncing ? 'sync' : 'cloud-upload-outline'} size={18} color="#FFF" />
+            <Text style={styles.actionButtonText}>{isSyncing ? '同期中...' : '同期'}</Text>
+          </TouchableOpacity>
+        )}
       </View>
 
       {/* Content */}
