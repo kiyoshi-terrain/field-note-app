@@ -23,6 +23,7 @@ import {
   updateOverlayOpacity,
   updateOverlayVisibility,
   updateOverlayGroup,
+  updateOverlayFilename,
   saveGroup,
   loadAllGroups,
   deleteGroup as deleteGroupFromDB,
@@ -67,6 +68,10 @@ export default function MapScreen() {
   // Group rename dialog
   const [renameGroupId, setRenameGroupId] = useState<string | null>(null);
   const [renameGroupName, setRenameGroupName] = useState('');
+
+  // Overlay rename dialog
+  const [renameOverlayId, setRenameOverlayId] = useState<string | null>(null);
+  const [renameOverlayName, setRenameOverlayName] = useState('');
 
   // Group menu
   const [groupMenuId, setGroupMenuId] = useState<string | null>(null);
@@ -301,6 +306,21 @@ export default function MapScreen() {
     setRenameGroupName('');
   }, [renameGroupId, renameGroupName]);
 
+  const handleRenameOverlay = useCallback(() => {
+    if (!renameOverlayId) return;
+    const name = renameOverlayName.trim();
+    if (!name) return;
+
+    setOverlays((prev) =>
+      prev.map((o) =>
+        o.id === renameOverlayId ? { ...o, name } : o
+      )
+    );
+    updateOverlayFilename(renameOverlayId, name).catch(console.error);
+    setRenameOverlayId(null);
+    setRenameOverlayName('');
+  }, [renameOverlayId, renameOverlayName]);
+
   const handleDeleteGroup = useCallback((groupId: string) => {
     if (groupId === 'default') return;
 
@@ -471,15 +491,23 @@ export default function MapScreen() {
                       />
                     </TouchableOpacity>
 
-                    <Text
-                      style={[
-                        styles.overlayName,
-                        !overlay.visible && styles.overlayNameHidden,
-                      ]}
-                      numberOfLines={1}
+                    <Pressable
+                      style={{ flex: 1 }}
+                      onPress={() => {
+                        setRenameOverlayId(overlay.id);
+                        setRenameOverlayName(overlay.name);
+                      }}
                     >
-                      {overlay.name}
-                    </Text>
+                      <Text
+                        style={[
+                          styles.overlayName,
+                          !overlay.visible && styles.overlayNameHidden,
+                        ]}
+                        numberOfLines={1}
+                      >
+                        {overlay.name}
+                      </Text>
+                    </Pressable>
 
                     <TouchableOpacity
                       onPress={() => handleFitToOverlay(overlay)}
@@ -604,6 +632,41 @@ export default function MapScreen() {
               </TouchableOpacity>
               <TouchableOpacity
                 onPress={handleRenameGroup}
+                style={[styles.dialogBtn, styles.dialogBtnPrimary]}
+                activeOpacity={0.6}
+              >
+                <Text style={styles.dialogBtnTextPrimary}>変更</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      )}
+
+      {/* ─── Rename overlay dialog ─── */}
+      {renameOverlayId && (
+        <View style={styles.dialogOverlay}>
+          <View style={styles.dialogBox}>
+            <Text style={styles.dialogTitle}>レイヤー名変更</Text>
+            <TextInput
+              style={styles.dialogInput}
+              value={renameOverlayName}
+              onChangeText={setRenameOverlayName}
+              placeholder="レイヤー名"
+              placeholderTextColor="#AAA"
+              autoFocus
+              selectTextOnFocus
+              onSubmitEditing={handleRenameOverlay}
+            />
+            <View style={styles.dialogActions}>
+              <TouchableOpacity
+                onPress={() => setRenameOverlayId(null)}
+                style={styles.dialogBtn}
+                activeOpacity={0.6}
+              >
+                <Text style={styles.dialogBtnTextCancel}>キャンセル</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={handleRenameOverlay}
                 style={[styles.dialogBtn, styles.dialogBtnPrimary]}
                 activeOpacity={0.6}
               >
@@ -1061,7 +1124,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   overlayName: {
-    flex: 1,
     fontSize: 14,
     fontWeight: '500',
     color: '#FFFFFF',

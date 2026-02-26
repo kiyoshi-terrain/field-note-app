@@ -174,6 +174,28 @@ export async function updateOverlayGroup(
   });
 }
 
+export async function updateOverlayFilename(
+  id: string,
+  filename: string,
+): Promise<void> {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(OVERLAY_STORE, 'readwrite');
+    const store = tx.objectStore(OVERLAY_STORE);
+    const getReq = store.get(id);
+    getReq.onsuccess = () => {
+      const record = getReq.result;
+      if (record) {
+        const updated = normalizeOverlay(record);
+        updated.filename = filename;
+        store.put(updated);
+      }
+    };
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+}
+
 // ─── Group CRUD ─────────────────────────────────────────
 
 export async function saveGroup(group: StoredGroup): Promise<void> {
