@@ -715,7 +715,7 @@ export default function MapScreen() {
         <Modal
           visible={showLayerPanel}
           animationType="slide"
-          transparent={false}
+          transparent={true}
           onRequestClose={() => setShowLayerPanel(false)}
         >
           <View style={[styles.modalContainer, { paddingTop: insets.top }]}>
@@ -897,21 +897,27 @@ const styles = StyleSheet.create({
     color: '#333333',
   },
 
-  // ─── Side panel (desktop) ─────────────────────
+  // ─── Side panel (desktop) — glassmorphism ─────
   sidePanel: {
     position: 'absolute',
     left: 0,
     width: SIDE_PANEL_WIDTH,
-    backgroundColor: '#F5F5F5',
+    backgroundColor: 'rgba(245, 245, 245, 0.65)',
+    backdropFilter: 'blur(20px)',
+    WebkitBackdropFilter: 'blur(20px)',
     zIndex: 30,
-    boxShadow: '2px 0px 8px rgba(0, 0, 0, 0.15)',
+    boxShadow: '2px 0px 16px rgba(0, 0, 0, 0.12), inset 0 0 0 1px rgba(255, 255, 255, 0.3)',
+    borderRightWidth: 1,
+    borderRightColor: 'rgba(255, 255, 255, 0.4)',
     elevation: 8,
   },
 
-  // ─── Full-screen modal (mobile) ───────────────
+  // ─── Full-screen modal (mobile) — glassmorphism
   modalContainer: {
     flex: 1,
-    backgroundColor: '#F5F5F5',
+    backgroundColor: 'rgba(245, 245, 245, 0.7)',
+    backdropFilter: 'blur(20px)',
+    WebkitBackdropFilter: 'blur(20px)',
   },
 
   // ─── Shared panel styles ──────────────────────
@@ -921,9 +927,9 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingHorizontal: 16,
     paddingVertical: 12,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: 'rgba(255, 255, 255, 0.45)',
     borderBottomWidth: 1,
-    borderBottomColor: '#E0E0E0',
+    borderBottomColor: 'rgba(255, 255, 255, 0.5)',
   },
   panelTitle: {
     fontSize: 18,
@@ -969,13 +975,15 @@ const styles = StyleSheet.create({
     padding: 12,
   },
 
-  // ─── Group ────────────────────────────────────
+  // ─── Group — glass cards ──────────────────────
   groupContainer: {
     marginBottom: 12,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: 'rgba(255, 255, 255, 0.4)',
+    backdropFilter: 'blur(12px)',
+    WebkitBackdropFilter: 'blur(12px)',
     borderRadius: 10,
     overflow: 'hidden',
-    boxShadow: '0px 1px 3px rgba(0, 0, 0, 0.1)',
+    boxShadow: '0px 2px 8px rgba(0, 0, 0, 0.06), inset 0 0 0 1px rgba(255, 255, 255, 0.4)',
     elevation: 2,
   },
   groupHeader: {
@@ -984,9 +992,9 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingHorizontal: 12,
     paddingVertical: 12,
-    backgroundColor: '#FAFAFA',
+    backgroundColor: 'rgba(255, 255, 255, 0.3)',
     borderBottomWidth: 1,
-    borderBottomColor: '#F0F0F0',
+    borderBottomColor: 'rgba(255, 255, 255, 0.4)',
   },
   groupHeaderLeft: {
     flexDirection: 'row',
