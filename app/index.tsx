@@ -1321,9 +1321,10 @@ const styles = StyleSheet.create({
   },
   actionBar: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     paddingHorizontal: 16,
     paddingVertical: 10,
-    gap: 10,
+    gap: 8,
     backgroundColor: 'rgba(255, 255, 255, 0.06)',
     borderBottomWidth: 1,
     borderBottomColor: 'rgba(255, 255, 255, 0.1)',
@@ -1332,17 +1333,17 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: '#4285F4',
-    paddingHorizontal: 14,
-    paddingVertical: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
     borderRadius: 8,
-    gap: 6,
+    gap: 4,
   },
   actionButtonSecondary: {
     backgroundColor: '#EEF3FF',
   },
   actionButtonText: {
     color: '#FFF',
-    fontSize: 14,
+    fontSize: 12,
     fontWeight: '600',
   },
   actionButtonTextSecondary: {
