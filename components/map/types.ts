@@ -38,4 +38,10 @@ export interface MapViewHandle {
   setOverlayOpacity: (id: string, opacity: number) => void;
   toggleOverlayVisibility: (id: string, visible: boolean) => void;
   fitToBounds: (bounds: [number, number, number, number]) => void;
+  /** Add all MLIT hazard vector tile sources & layers (initially hidden) */
+  addHazardLayers: () => void;
+  /** Toggle a hazard layer visibility */
+  toggleHazardLayer: (id: string, visible: boolean) => void;
+  /** Set hazard layer fill opacity */
+  setHazardOpacity: (id: string, opacity: number) => void;
 }

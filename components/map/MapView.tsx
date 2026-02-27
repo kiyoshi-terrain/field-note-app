@@ -64,6 +64,15 @@ export default forwardRef<MapViewHandle, MapViewProps>(
       fitToBounds(bounds: [number, number, number, number]) {
         sendCommand({ type: 'fitToBounds', bounds });
       },
+      addHazardLayers() {
+        // Not yet implemented for native WebView
+      },
+      toggleHazardLayer(id: string, visible: boolean) {
+        // Not yet implemented for native WebView
+      },
+      setHazardOpacity(id: string, opacity: number) {
+        // Not yet implemented for native WebView
+      },
     }), [sendCommand]);
 
     const handleMessage = useCallback((event: WebViewMessageEvent) => {

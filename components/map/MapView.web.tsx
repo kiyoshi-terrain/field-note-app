@@ -4,6 +4,7 @@ import maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { Protocol, PMTiles } from 'pmtiles';
 import type { MapViewProps, MapViewHandle, TileSource, OverlayInfo } from './types';
+import { HAZARD_LAYERS, hazardTileUrl } from '@/lib/hazard-layers';
 
 const DEFAULT_CENTER: [number, number] = [139.6917, 35.6895];
 const DEFAULT_ZOOM = 13;
@@ -218,6 +219,80 @@ export default forwardRef<MapViewHandle, MapViewProps>(
         if (!map) return;
 
         map.fitBounds(bounds, { padding: 40, duration: 1500 });
+      },
+
+      addHazardLayers() {
+        const map = mapRef.current;
+        if (!map) return;
+
+        const beforeLayerId = map.getLayer('user-location-accuracy')
+          ? 'user-location-accuracy'
+          : undefined;
+
+        for (const layer of HAZARD_LAYERS) {
+          // Skip if already added
+          if (map.getSource(layer.id)) continue;
+
+          map.addSource(layer.id, {
+            type: 'vector',
+            tiles: [hazardTileUrl(layer.apiCode)],
+            minzoom: layer.minzoom,
+            maxzoom: 15,
+          });
+
+          // Fill layer (semi-transparent polygon)
+          map.addLayer(
+            {
+              id: `${layer.id}-fill`,
+              type: 'fill',
+              source: layer.id,
+              'source-layer': layer.sourceLayer,
+              paint: {
+                'fill-color': layer.color,
+                'fill-opacity': 0.3,
+              },
+              layout: { visibility: 'none' },
+            },
+            beforeLayerId,
+          );
+
+          // Line layer (boundary)
+          map.addLayer(
+            {
+              id: `${layer.id}-line`,
+              type: 'line',
+              source: layer.id,
+              'source-layer': layer.sourceLayer,
+              paint: {
+                'line-color': layer.color,
+                'line-width': 1.5,
+              },
+              layout: { visibility: 'none' },
+            },
+            beforeLayerId,
+          );
+        }
+      },
+
+      toggleHazardLayer(id: string, visible: boolean) {
+        const map = mapRef.current;
+        if (!map) return;
+
+        const vis = visible ? 'visible' : 'none';
+        const fillId = `${id}-fill`;
+        const lineId = `${id}-line`;
+        if (map.getLayer(fillId)) map.setLayoutProperty(fillId, 'visibility', vis);
+        if (map.getLayer(lineId)) map.setLayoutProperty(lineId, 'visibility', vis);
+      },
+
+      setHazardOpacity(id: string, opacity: number) {
+        const map = mapRef.current;
+        if (!map) return;
+
+        const fillId = `${id}-fill`;
+        if (map.getLayer(fillId)) {
+          map.setPaintProperty(fillId, 'fill-opacity', opacity);
+        }
       },
     }), []);
 

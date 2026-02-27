@@ -29,6 +29,7 @@ import {
   loadAllGroups,
   deleteGroup as deleteGroupFromDB,
 } from '@/lib/overlay-store';
+import { HAZARD_LAYERS } from '@/lib/hazard-layers';
 import {
   initGoogleAuth,
   signIn as googleSignIn,
@@ -94,6 +95,18 @@ export default function MapScreen() {
   // URL overlay dialog
   const [showUrlDialog, setShowUrlDialog] = useState(false);
   const [urlInput, setUrlInput] = useState('');
+
+  // Hazard layers
+  const [hazardVisibility, setHazardVisibility] = useState<Record<string, boolean>>(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const saved = localStorage.getItem('hazardVisibility');
+        if (saved) return JSON.parse(saved);
+      } catch { /* ignore */ }
+    }
+    return {};
+  });
+  const [hazardExpanded, setHazardExpanded] = useState(true);
 
   // Google Drive sync
   const [googleUser, setGoogleUser] = useState<DriveUser | null>(null);
@@ -163,6 +176,17 @@ export default function MapScreen() {
             }
             setOverlays((prev) => [...prev.filter((o) => o.id !== entry.id), info]);
           }
+        }
+        // Add hazard layers (initially hidden, restore saved visibility)
+        mapRef.current?.addHazardLayers();
+        const saved = localStorage.getItem('hazardVisibility');
+        if (saved) {
+          try {
+            const vis = JSON.parse(saved) as Record<string, boolean>;
+            for (const [id, visible] of Object.entries(vis)) {
+              if (visible) mapRef.current?.toggleHazardLayer(id, true);
+            }
+          } catch { /* ignore */ }
         }
       } catch (e) {
         console.error('Failed to restore overlays:', e);
@@ -389,6 +413,17 @@ export default function MapScreen() {
     setUrlInput('');
     setShowUrlDialog(false);
   }, [urlInput]);
+
+  // ─── Hazard layer handlers ──────────────────────────────
+
+  const handleToggleHazard = useCallback((id: string) => {
+    setHazardVisibility((prev) => {
+      const next = { ...prev, [id]: !prev[id] };
+      localStorage.setItem('hazardVisibility', JSON.stringify(next));
+      mapRef.current?.toggleHazardLayer(id, !!next[id]);
+      return next;
+    });
+  }, []);
 
   // ─── Google Drive handlers ──────────────────────────────
 
@@ -849,6 +884,69 @@ export default function MapScreen() {
             </View>
           );
         })}
+
+        {/* ─── Hazard layers section ─── */}
+        <View style={styles.groupContainer}>
+          <TouchableOpacity
+            style={styles.groupHeader}
+            onPress={() => setHazardExpanded((prev) => !prev)}
+            activeOpacity={0.6}
+          >
+            <View style={styles.groupHeaderLeft}>
+              <Ionicons
+                name={hazardExpanded ? 'chevron-down' : 'chevron-forward'}
+                size={20}
+                color="rgba(255,255,255,0.6)"
+              />
+              <Ionicons name="warning" size={16} color="#E53E3E" style={{ marginLeft: 4 }} />
+              <Text style={styles.groupName}>ハザード情報</Text>
+              <Text style={styles.groupCount}>{HAZARD_LAYERS.length}</Text>
+            </View>
+          </TouchableOpacity>
+
+          {hazardExpanded && HAZARD_LAYERS.map((layer) => {
+            const isOn = !!hazardVisibility[layer.id];
+            return (
+              <TouchableOpacity
+                key={layer.id}
+                style={[
+                  styles.overlayCard,
+                  !isOn && styles.overlayCardHidden,
+                ]}
+                onPress={() => handleToggleHazard(layer.id)}
+                activeOpacity={0.6}
+              >
+                <View style={styles.overlayCardHeader}>
+                  <View style={styles.visibilityBtn}>
+                    <View style={{
+                      width: 14,
+                      height: 14,
+                      borderRadius: 3,
+                      backgroundColor: isOn ? layer.color : 'transparent',
+                      borderWidth: 2,
+                      borderColor: layer.color,
+                    }} />
+                  </View>
+                  <Text
+                    style={[styles.overlayName, { flex: 1 }, !isOn && styles.overlayNameHidden]}
+                    numberOfLines={1}
+                  >
+                    {layer.label}
+                  </Text>
+                  <Text style={{
+                    fontSize: 10,
+                    color: isOn ? layer.color : 'rgba(255,255,255,0.3)',
+                    fontWeight: '600',
+                    minWidth: 30,
+                    textAlign: 'right',
+                  }}>
+                    {isOn ? 'ON' : 'OFF'}
+                  </Text>
+                </View>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
       </ScrollView>
 
       {/* ─── Create group dialog ─── */}
