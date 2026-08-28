@@ -10,10 +10,13 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { compressImage, loadPhotosForFeature } from '@/lib/photo-store';
 import {
-  compressImage,
-  loadPhotosForFeature,
-} from '@/lib/photo-store';
+  loadModelsForFeature,
+  type ModelAnnotation,
+  type StoredModel,
+} from '@/lib/model-store';
+import ModelViewer from './ModelViewer';
 
 export const NOTE_COLORS = [
   '#4285F4',
@@ -26,10 +29,21 @@ export const NOTE_COLORS = [
   '#795548',
 ];
 
-/** 保存時に親へ渡す写真の増減 */
-export interface PhotoChanges {
-  added: Blob[];
-  deletedIds: string[];
+/** 3Dモデルの上限サイズ（これを超えるとIndexedDB保存が現実的でない） */
+const MAX_MODEL_BYTES = 150 * 1024 * 1024;
+
+/** 保存時に親へ渡す添付の増減 */
+export interface AttachmentChanges {
+  photos: {
+    added: Blob[];
+    deletedIds: string[];
+  };
+  models: {
+    added: { name: string; blob: Blob; annotations: ModelAnnotation[] }[];
+    deletedIds: string[];
+    /** 既存モデルのアノテーション更新 */
+    updated: { id: string; annotations: ModelAnnotation[] }[];
+  };
 }
 
 interface ExistingPhoto {
@@ -48,14 +62,19 @@ export interface NoteEditDialogProps {
   initialName: string;
   initialDescription: string;
   initialColor: string;
-  /** 既存ノート編集時のID（保存済み写真の読み込みに使用）。新規作成はnull */
+  /** 既存ノート編集時のID（保存済み添付の読み込みに使用）。新規作成はnull */
   featureId?: string | null;
   saveLabel?: string;
-  onSave: (name: string, description: string, color: string, photos: PhotoChanges) => void;
+  onSave: (
+    name: string,
+    description: string,
+    color: string,
+    attachments: AttachmentChanges,
+  ) => void;
   onCancel: () => void;
 }
 
-/** ノートの名前・説明・色・写真を編集するダイアログ（新規作成・編集で共用） */
+/** ノートの名前・説明・色・添付（写真 / 3Dモデル）を編集するダイアログ */
 export default function NoteEditDialog({
   visible,
   title,
@@ -73,18 +92,26 @@ export default function NoteEditDialog({
 
   const [existingPhotos, setExistingPhotos] = useState<ExistingPhoto[]>([]);
   const [addedPhotos, setAddedPhotos] = useState<AddedPhoto[]>([]);
-  const [deletedIds, setDeletedIds] = useState<string[]>([]);
+  const [deletedPhotoIds, setDeletedPhotoIds] = useState<string[]>([]);
+
+  // 3Dモデル（既存・新規とも StoredModel 形で保持し、ビューアへそのまま渡す）
+  const [existingModels, setExistingModels] = useState<StoredModel[]>([]);
+  const [addedModels, setAddedModels] = useState<StoredModel[]>([]);
+  const [deletedModelIds, setDeletedModelIds] = useState<string[]>([]);
+  const [updatedModelIds, setUpdatedModelIds] = useState<string[]>([]);
+  const [viewerModelId, setViewerModelId] = useState<string | null>(null);
+
   const [processing, setProcessing] = useState(false);
   const [viewerUrl, setViewerUrl] = useState<string | null>(null);
 
-  // Object URLの後始末用に最新の写真リストを保持
+  // Object URLの後始末用に最新の写真URLを保持
   const urlsRef = useRef<string[]>([]);
   urlsRef.current = [
     ...existingPhotos.map((p) => p.url),
     ...addedPhotos.map((p) => p.url),
   ];
 
-  // ダイアログが開くたびに初期値をリセットし、既存写真を読み込む
+  // ダイアログが開くたびに初期値をリセットし、既存の添付を読み込む
   useEffect(() => {
     if (!visible) return;
 
@@ -92,7 +119,11 @@ export default function NoteEditDialog({
     setDescription(initialDescription);
     setColor(initialColor);
     setAddedPhotos([]);
-    setDeletedIds([]);
+    setDeletedPhotoIds([]);
+    setAddedModels([]);
+    setDeletedModelIds([]);
+    setUpdatedModelIds([]);
+    setViewerModelId(null);
     setViewerUrl(null);
 
     let cancelled = false;
@@ -105,16 +136,23 @@ export default function NoteEditDialog({
           );
         })
         .catch(console.error);
+      loadModelsForFeature(featureId)
+        .then((models) => {
+          if (!cancelled) setExistingModels(models);
+        })
+        .catch(console.error);
     } else {
       setExistingPhotos([]);
+      setExistingModels([]);
     }
 
     return () => {
       cancelled = true;
-      // ダイアログを閉じるときにObject URLを解放
       for (const url of urlsRef.current) URL.revokeObjectURL(url);
     };
   }, [visible, initialName, initialDescription, initialColor, featureId]);
+
+  // ─── 写真 ───
 
   const pickPhotos = useCallback((fromCamera: boolean) => {
     if (Platform.OS !== 'web') return;
@@ -138,10 +176,7 @@ export default function NoteEditDialog({
       try {
         for (const file of files) {
           const blob = await compressImage(file);
-          setAddedPhotos((prev) => [
-            ...prev,
-            { blob, url: URL.createObjectURL(blob) },
-          ]);
+          setAddedPhotos((prev) => [...prev, { blob, url: URL.createObjectURL(blob) }]);
         }
       } catch (e) {
         console.error('Failed to process photo:', e);
@@ -154,13 +189,13 @@ export default function NoteEditDialog({
     input.click();
   }, []);
 
-  const removeExisting = useCallback((photo: ExistingPhoto) => {
+  const removeExistingPhoto = useCallback((photo: ExistingPhoto) => {
     setExistingPhotos((prev) => prev.filter((p) => p.id !== photo.id));
-    setDeletedIds((prev) => [...prev, photo.id]);
+    setDeletedPhotoIds((prev) => [...prev, photo.id]);
     URL.revokeObjectURL(photo.url);
   }, []);
 
-  const removeAdded = useCallback((index: number) => {
+  const removeAddedPhoto = useCallback((index: number) => {
     setAddedPhotos((prev) => {
       const target = prev[index];
       if (target) URL.revokeObjectURL(target.url);
@@ -168,14 +203,105 @@ export default function NoteEditDialog({
     });
   }, []);
 
+  // ─── 3Dモデル ───
+
+  const pickModels = useCallback(() => {
+    if (Platform.OS !== 'web') return;
+
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.glb,.gltf,model/gltf-binary,model/gltf+json';
+    input.multiple = true;
+    input.style.display = 'none';
+    input.addEventListener('change', async () => {
+      const files = Array.from(input.files ?? []);
+      document.body.removeChild(input);
+      if (files.length === 0) return;
+
+      setProcessing(true);
+      try {
+        for (const file of files) {
+          if (file.size > MAX_MODEL_BYTES) {
+            alert(`${file.name} は大きすぎます（上限 ${MAX_MODEL_BYTES / 1024 / 1024}MB）`);
+            continue;
+          }
+          const now = Date.now();
+          setAddedModels((prev) => [
+            ...prev,
+            {
+              id: `model-new-${now}-${prev.length}`,
+              featureId: '',
+              name: file.name.replace(/\.(glb|gltf)$/i, ''),
+              blob: file,
+              annotations: [],
+              createdAt: now + prev.length,
+            },
+          ]);
+        }
+      } catch (e) {
+        console.error('Failed to attach model:', e);
+        alert('3Dモデルの読み込みに失敗しました');
+      } finally {
+        setProcessing(false);
+      }
+    });
+    document.body.appendChild(input);
+    input.click();
+  }, []);
+
+  const removeModel = useCallback((model: StoredModel, isExisting: boolean) => {
+    if (isExisting) {
+      setExistingModels((prev) => prev.filter((m) => m.id !== model.id));
+      setDeletedModelIds((prev) => [...prev, model.id]);
+    } else {
+      setAddedModels((prev) => prev.filter((m) => m.id !== model.id));
+    }
+  }, []);
+
+  const handleAnnotationsChange = useCallback(
+    (modelId: string, annotations: ModelAnnotation[]) => {
+      let wasExisting = false;
+      setExistingModels((prev) =>
+        prev.map((m) => {
+          if (m.id !== modelId) return m;
+          wasExisting = true;
+          return { ...m, annotations };
+        }),
+      );
+      setAddedModels((prev) =>
+        prev.map((m) => (m.id === modelId ? { ...m, annotations } : m)),
+      );
+      if (wasExisting) {
+        setUpdatedModelIds((prev) => (prev.includes(modelId) ? prev : [...prev, modelId]));
+      }
+    },
+    [],
+  );
+
   if (!visible) return null;
+
+  const allModels = [...existingModels, ...addedModels];
+  const viewerModel = allModels.find((m) => m.id === viewerModelId) ?? null;
 
   const handleSave = () => {
     const trimmed = name.trim();
     if (!trimmed) return;
     onSave(trimmed, description.trim(), color, {
-      added: addedPhotos.map((p) => p.blob),
-      deletedIds,
+      photos: {
+        added: addedPhotos.map((p) => p.blob),
+        deletedIds: deletedPhotoIds,
+      },
+      models: {
+        added: addedModels.map((m) => ({
+          name: m.name,
+          blob: m.blob,
+          annotations: m.annotations,
+        })),
+        deletedIds: deletedModelIds,
+        updated: existingModels
+          .filter((m) => updatedModelIds.includes(m.id))
+          .map((m) => ({ id: m.id, annotations: m.annotations })),
+      },
     });
   };
 
@@ -183,12 +309,12 @@ export default function NoteEditDialog({
     ...existingPhotos.map((p) => ({
       key: `e-${p.id}`,
       url: p.url,
-      onRemove: () => removeExisting(p),
+      onRemove: () => removeExistingPhoto(p),
     })),
     ...addedPhotos.map((p, i) => ({
       key: `a-${i}`,
       url: p.url,
-      onRemove: () => removeAdded(i),
+      onRemove: () => removeAddedPhoto(i),
     })),
   ];
 
@@ -215,17 +341,14 @@ export default function NoteEditDialog({
           multiline
         />
 
-        {/* ─── 写真 ─── */}
+        {/* ─── 添付 ─── */}
         {Platform.OS === 'web' && (
           <View style={styles.photoSection}>
             <ScrollView horizontal showsHorizontalScrollIndicator={false}>
               <View style={styles.photoRow}>
                 {thumbnails.map((t) => (
                   <View key={t.key} style={styles.thumbWrap}>
-                    <TouchableOpacity
-                      onPress={() => setViewerUrl(t.url)}
-                      activeOpacity={0.8}
-                    >
+                    <TouchableOpacity onPress={() => setViewerUrl(t.url)} activeOpacity={0.8}>
                       <img
                         src={t.url}
                         style={{
@@ -249,6 +372,34 @@ export default function NoteEditDialog({
                   </View>
                 ))}
 
+                {/* 3Dモデルのカード */}
+                {allModels.map((m) => {
+                  const isExisting = existingModels.some((e) => e.id === m.id);
+                  return (
+                    <View key={m.id} style={styles.thumbWrap}>
+                      <TouchableOpacity
+                        style={styles.modelCard}
+                        onPress={() => setViewerModelId(m.id)}
+                        activeOpacity={0.7}
+                      >
+                        <Ionicons name="cube-outline" size={20} color="#34A853" />
+                        <Text style={styles.modelName} numberOfLines={1}>{m.name}</Text>
+                        {m.annotations.length > 0 && (
+                          <Text style={styles.modelAnno}>📍{m.annotations.length}</Text>
+                        )}
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={styles.thumbRemove}
+                        onPress={() => removeModel(m, isExisting)}
+                        hitSlop={6}
+                        activeOpacity={0.7}
+                      >
+                        <Ionicons name="close" size={12} color="#FFF" />
+                      </TouchableOpacity>
+                    </View>
+                  );
+                })}
+
                 <TouchableOpacity
                   style={styles.photoAddBtn}
                   onPress={() => pickPhotos(true)}
@@ -266,6 +417,15 @@ export default function NoteEditDialog({
                 >
                   <Ionicons name="images-outline" size={22} color="#4285F4" />
                   <Text style={styles.photoAddLabel}>ライブラリ</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.photoAddBtn, styles.modelAddBtn]}
+                  onPress={pickModels}
+                  activeOpacity={0.7}
+                  disabled={processing}
+                >
+                  <Ionicons name="cube-outline" size={22} color="#34A853" />
+                  <Text style={[styles.photoAddLabel, { color: '#34A853' }]}>3Dモデル</Text>
                 </TouchableOpacity>
 
                 {processing && (
@@ -311,7 +471,7 @@ export default function NoteEditDialog({
       {/* ─── フルスクリーン写真ビューア ─── */}
       {viewerUrl && (
         <TouchableOpacity
-          style={styles.viewerOverlay}
+          style={styles.imageViewerOverlay}
           onPress={() => setViewerUrl(null)}
           activeOpacity={1}
         >
@@ -330,6 +490,14 @@ export default function NoteEditDialog({
           </View>
         </TouchableOpacity>
       )}
+
+      {/* ─── 3Dモデルビューア（アノテーション） ─── */}
+      <ModelViewer
+        visible={viewerModel != null}
+        model={viewerModel}
+        onClose={() => setViewerModelId(null)}
+        onAnnotationsChange={handleAnnotationsChange}
+      />
     </View>
   );
 }
@@ -394,6 +562,28 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
+  modelCard: {
+    width: 72,
+    height: 56,
+    borderRadius: 8,
+    backgroundColor: '#F1F8F3',
+    borderWidth: 1,
+    borderColor: '#BFE3C9',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 4,
+    gap: 1,
+  },
+  modelName: {
+    fontSize: 8,
+    color: '#2E7D46',
+    fontWeight: '600',
+    maxWidth: 64,
+  },
+  modelAnno: {
+    fontSize: 8,
+    color: '#666',
+  },
   photoAddBtn: {
     width: 56,
     height: 56,
@@ -405,6 +595,10 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     gap: 2,
+  },
+  modelAddBtn: {
+    borderColor: '#BFE3C9',
+    backgroundColor: '#F1F8F3',
   },
   photoAddLabel: {
     fontSize: 9,
@@ -455,7 +649,7 @@ const styles = StyleSheet.create({
     color: '#FFF',
     fontWeight: '600',
   },
-  viewerOverlay: {
+  imageViewerOverlay: {
     ...StyleSheet.absoluteFillObject,
     backgroundColor: 'rgba(0, 0, 0, 0.85)',
     justifyContent: 'center',

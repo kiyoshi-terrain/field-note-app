@@ -16,6 +16,8 @@ Avenza Maps + 描画機能のイメージのフィールドGISアプリです。
 - 名前・説明・色を付けて保存（IndexedDBに永続化、リロード後も復元）
 - GPSトラック記録（移動距離・経過時間をリアルタイム表示）
 - ライン距離・ポリゴン面積/周囲長の自動計測表示
+- 写真添付（カメラ撮影・フォトライブラリ、自動圧縮してオフライン保存）
+- **3Dモデル添付（GLB / glTF）** — Scaniverse等のスキャンをノートに付け、モデル表面をタップして番号付きアノテーション（所見）を記録
 - GeoJSON / GPX エクスポート・インポート
 
 ## 開発・実行
@@ -33,7 +35,7 @@ npm run build:web       # GitHub Pages用ビルド（dist/）
 
 - Expo SDK 54 + React Native 0.81 + TypeScript（strict）
 - expo-router 6（ファイルベースルーティング）
-- MapLibre GL JS + PMTiles + Terra Draw（Web）
+- MapLibre GL JS + PMTiles + Terra Draw + three.js（Web）
 - react-native-webview 経由のMapLibre（iOS / Android）
 
 アーキテクチャの詳細は [CLAUDE.md](./CLAUDE.md) を参照してください。

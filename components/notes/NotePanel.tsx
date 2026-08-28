@@ -59,6 +59,8 @@ export interface NotePanelProps {
   features: NoteFeature[];
   /** ノートIDごとの添付写真枚数 */
   photoCounts?: Record<string, number>;
+  /** ノートIDごとの3Dモデル数・アノテーション数 */
+  modelCounts?: Record<string, { models: number; annotations: number }>;
   onClose: () => void;
   onZoomTo: (feature: NoteFeature) => void;
   onEdit: (feature: NoteFeature) => void;
@@ -75,6 +77,7 @@ export default function NotePanel({
   bottomInset,
   features,
   photoCounts = {},
+  modelCounts = {},
   onClose,
   onZoomTo,
   onEdit,
@@ -155,6 +158,8 @@ export default function NotePanel({
                   <Text style={styles.cardMeta} numberOfLines={1}>
                     {meta.label} ・ {featureSummary(f)}
                     {(photoCounts[f.id] ?? 0) > 0 && ` ・ 📷${photoCounts[f.id]}`}
+                    {(modelCounts[f.id]?.models ?? 0) > 0 && ` ・ 🧊${modelCounts[f.id].models}`}
+                    {(modelCounts[f.id]?.annotations ?? 0) > 0 && ` 📍${modelCounts[f.id].annotations}`}
                   </Text>
                   {!!f.description && (
                     <Text style={styles.cardDesc} numberOfLines={2}>

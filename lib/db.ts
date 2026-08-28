@@ -7,12 +7,13 @@
  */
 
 const DB_NAME = 'FieldNoteApp';
-const DB_VERSION = 4;
+const DB_VERSION = 5;
 
 export const OVERLAY_STORE = 'overlays';
 export const GROUP_STORE = 'overlay-groups';
 export const FEATURE_STORE = 'features';
 export const PHOTO_STORE = 'photos';
+export const MODEL_STORE = 'models';
 
 export function openDB(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
@@ -37,6 +38,12 @@ export function openDB(): Promise<IDBDatabase> {
       if (oldVersion < 4) {
         if (!db.objectStoreNames.contains(PHOTO_STORE)) {
           const store = db.createObjectStore(PHOTO_STORE, { keyPath: 'id' });
+          store.createIndex('featureId', 'featureId', { unique: false });
+        }
+      }
+      if (oldVersion < 5) {
+        if (!db.objectStoreNames.contains(MODEL_STORE)) {
+          const store = db.createObjectStore(MODEL_STORE, { keyPath: 'id' });
           store.createIndex('featureId', 'featureId', { unique: false });
         }
       }

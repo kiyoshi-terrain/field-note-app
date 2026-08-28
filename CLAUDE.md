@@ -23,6 +23,7 @@
 
 ### Phase 4: フィールド向け強化
 10. ✅ Waypoint写真撮影（カメラ・フォトライブラリ添付、IndexedDB保存）※Web版・全ノート種別対応
+10b. ✅ 3Dモデル添付（GLB/glTF）+ モデル表面へのアノテーション（Scaniverse等のスキャン成果を想定）
 11. 🔶 座標・コンパスオーバーレイ表示（座標バーは実装済み）
 12. 🔶 ダークアウトドアテーマ（フォレストグリーン + アンバー）
 
@@ -34,6 +35,7 @@
 - Expo SDK 54 + React Native 0.81.5 + TypeScript
 - expo-router 6（ファイルベースルーティング）
 - MapLibre GL JS — WebView経由（Native）/ 直接レンダリング（Web）
+- three.js — GLB/glTFビューア（Web版のみ）
 - react-native-webview — Native側の地図表示
 - maplibre-gl npm — Web側の地図表示
 
@@ -57,8 +59,10 @@ components/
     types.ts           MapViewHandle / DrawMode / Overlay型定義
   notes/
     DrawToolbar.tsx    描画・トラック記録・ノート一覧ツールバー
-    NotePanel.tsx      ノート一覧パネル（計測値表示・入出力）
-    NoteEditDialog.tsx ノート名・説明・色の入力ダイアログ
+    NotePanel.tsx      ノート一覧パネル（計測値・添付件数表示・入出力）
+    NoteEditDialog.tsx ノート名・説明・色・添付（写真/3Dモデル）の編集ダイアログ
+    ModelViewer.web.tsx 3Dモデルビューア（three.js + アノテーション）
+    ModelViewer.tsx    Native用スタブ（no-op）
 hooks/
   use-location.ts      GPS位置取得フック
   use-track-recorder.ts GPSトラック記録フック
@@ -67,6 +71,7 @@ lib/
   overlay-store.ts     PMTilesオーバーレイのIndexedDB永続化
   feature-store.ts     フィールドノートのIndexedDB永続化
   photo-store.ts       ノート添付写真の保存と画像圧縮
+  model-store.ts       ノート添付3Dモデルとアノテーションの保存
   feature-io.ts        GeoJSON / GPX 入出力
   geo-utils.ts         距離・面積・方位計算とフォーマッタ
   hazard-layers.ts     MLITハザードレイヤー定義
