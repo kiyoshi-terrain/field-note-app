@@ -1,50 +1,39 @@
-# Welcome to your Expo app 👋
+# Field Note App
 
-This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
+オフライン地図上でGPS位置取得・描画・データ保存ができる現場調査ツール。
+Avenza Maps + 描画機能のイメージのフィールドGISアプリです。
 
-## Get started
+## 主な機能
 
-1. Install dependencies
+### 地図・位置
+- MapLibre GL JSによる地図表示（OSM / 地理院 淡色・航空写真・陰影起伏 / PMTilesベクター）
+- GPS現在地表示（精度サークル・パルスアニメーション・座標オーバーレイバー）
+- PMTilesラスターオーバーレイ（ローカルファイル / URL、グループ管理・透過度調整・IndexedDB永続化）
+- ハザードレイヤー表示（急傾斜地・地すべり・液状化など、MLIT 不動産情報ライブラリ）
 
-   ```bash
-   npm install
-   ```
+### フィールドノート（Web版）
+- Terra Drawによる描画: Waypoint（ポイント）・ライン・ポリゴン
+- 名前・説明・色を付けて保存（IndexedDBに永続化、リロード後も復元）
+- GPSトラック記録（移動距離・経過時間をリアルタイム表示）
+- ライン距離・ポリゴン面積/周囲長の自動計測表示
+- GeoJSON / GPX エクスポート・インポート
 
-2. Start the app
-
-   ```bash
-   npx expo start
-   ```
-
-In the output, you'll find options to open the app in a
-
-- [development build](https://docs.expo.dev/develop/development-builds/introduction/)
-- [Android emulator](https://docs.expo.dev/workflow/android-studio-emulator/)
-- [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
-- [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
-
-You can start developing by editing the files inside the **app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
-
-## Get a fresh project
-
-When you're ready, run:
+## 開発・実行
 
 ```bash
-npm run reset-project
+npm install
+npx expo start --web    # Webプレビュー（全機能）
+npx expo start          # モバイル（Expo Go — 地図・GPSのみ）
+npm run build:web       # GitHub Pages用ビルド（dist/）
 ```
 
-This command will move the starter code to the **app-example** directory and create a blank **app** directory where you can start developing.
+`main`へのpushで GitHub Actions により GitHub Pages へ自動デプロイされます。
 
-## Learn more
+## 技術スタック
 
-To learn more about developing your project with Expo, look at the following resources:
+- Expo SDK 54 + React Native 0.81 + TypeScript（strict）
+- expo-router 6（ファイルベースルーティング）
+- MapLibre GL JS + PMTiles + Terra Draw（Web）
+- react-native-webview 経由のMapLibre（iOS / Android）
 
-- [Expo documentation](https://docs.expo.dev/): Learn fundamentals, or go into advanced topics with our [guides](https://docs.expo.dev/guides).
-- [Learn Expo tutorial](https://docs.expo.dev/tutorial/introduction/): Follow a step-by-step tutorial where you'll create a project that runs on Android, iOS, and the web.
-
-## Join the community
-
-Join our community of developers creating universal apps.
-
-- [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
-- [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
+アーキテクチャの詳細は [CLAUDE.md](./CLAUDE.md) を参照してください。

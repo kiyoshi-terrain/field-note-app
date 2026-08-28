@@ -9,22 +9,26 @@
 ### Phase 1: 基盤（地図 + 位置）
 1. ✅ 地図表示（MapLibre GL JS + OSMラスタータイル）
 2. ✅ GPS位置取得 + 現在地表示
-3. 🔶 PMTilesオフラインタイル対応
+3. ✅ PMTilesオフラインタイル対応（ローカル/URLラスターオーバーレイ + レイヤー管理パネル）
 
 ### Phase 2: データ作成
-4. 🔶 Terra Drawによる描画ツール（ポイント・ライン・ポリゴン）
-5. 🔶 Waypoint配置（名前・説明・写真・色）
-6. 🔶 GPSトラック記録（距離・時間・標高統計）
+4. ✅ Terra Drawによる描画ツール（ポイント・ライン・ポリゴン）※Web版
+5. ✅ Waypoint配置（名前・説明・色）※写真はPhase 4
+6. ✅ GPSトラック記録（距離・時間統計）※標高統計は未対応
 
 ### Phase 3: データ管理
-7. 🔶 GeoPackageへの保存
-8. 🔶 GeoJSON / GPXインポート・エクスポート
-9. 🔶 距離・方位計測ツール
+7. 🔶 GeoPackageへの保存（未対応 — 現状はIndexedDB永続化 + GeoJSON/GPXで代替）
+8. ✅ GeoJSON / GPXインポート・エクスポート
+9. ✅ 計測表示（ライン距離・ポリゴン面積/周囲長をノート一覧に自動表示）※単体の計測モードは未実装
 
 ### Phase 4: フィールド向け強化
 10. 🔶 Waypoint写真撮影（カメラ連携）
-11. 🔶 座標・コンパスオーバーレイ表示
+11. 🔶 座標・コンパスオーバーレイ表示（座標バーは実装済み）
 12. 🔶 ダークアウトドアテーマ（フォレストグリーン + アンバー）
+
+### 補足
+- 描画・ノート機能はWeb版のみ。Native（WebView地図）はオーバーレイ・ハザード・描画が未実装のno-opスタブ。
+- ハザードレイヤー（MLIT 不動産情報ライブラリ、Geoloniaプロキシ経由）を追加実装済み。
 
 ## 技術スタック
 - Expo SDK 54 + React Native 0.81.5 + TypeScript
@@ -44,12 +48,26 @@ Expoの拡張子ベース自動解決を使用：
 ```
 app/
   _layout.tsx          ルートレイアウト（headerなしStack）
-  index.tsx            メイン画面（地図フルスクリーン）
+  index.tsx            メイン画面（地図フルスクリーン + 全UI配線）
 components/
   map/
     map-html.ts        MapLibre GL JS HTMLテンプレート生成
-    MapView.tsx        Native用地図コンポーネント
-    MapView.web.tsx    Web用地図コンポーネント
+    MapView.tsx        Native用地図コンポーネント（描画等はno-op）
+    MapView.web.tsx    Web用地図コンポーネント（Terra Draw統合）
+    types.ts           MapViewHandle / DrawMode / Overlay型定義
+  notes/
+    DrawToolbar.tsx    描画・トラック記録・ノート一覧ツールバー
+    NotePanel.tsx      ノート一覧パネル（計測値表示・入出力）
+    NoteEditDialog.tsx ノート名・説明・色の入力ダイアログ
+hooks/
+  use-location.ts      GPS位置取得フック
+  use-track-recorder.ts GPSトラック記録フック
+lib/
+  overlay-store.ts     PMTilesオーバーレイのIndexedDB永続化
+  feature-store.ts     フィールドノートのIndexedDB永続化
+  feature-io.ts        GeoJSON / GPX 入出力
+  geo-utils.ts         距離・面積・方位計算とフォーマッタ
+  hazard-layers.ts     MLITハザードレイヤー定義
 ```
 
 ### React Native ↔ MapLibre 通信

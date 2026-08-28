@@ -14,8 +14,28 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import MapView from '@/components/map/MapView';
-import type { MapViewHandle, TileSource, OverlayInfo, OverlayGroup } from '@/components/map/types';
+import type { MapViewHandle, TileSource, OverlayInfo, OverlayGroup, DrawMode } from '@/components/map/types';
+import NotePanel from '@/components/notes/NotePanel';
+import DrawToolbar from '@/components/notes/DrawToolbar';
+import NoteEditDialog, { NOTE_COLORS } from '@/components/notes/NoteEditDialog';
 import { useLocation } from '@/hooks/use-location';
+import { useTrackRecorder } from '@/hooks/use-track-recorder';
+import {
+  saveFeature,
+  loadAllFeatures,
+  deleteFeature as deleteFeatureFromDB,
+  updateFeatureMeta,
+  type NoteFeature,
+  type NoteGeometry,
+} from '@/lib/feature-store';
+import {
+  featuresToGeoJSON,
+  featuresToGPX,
+  downloadFile,
+  parseGeoJSON,
+  parseGPX,
+} from '@/lib/feature-io';
+import { coordsBounds, formatDistance, formatDuration } from '@/lib/geo-utils';
 import {
   saveOverlay,
   saveUrlOverlay,
@@ -94,12 +114,49 @@ export default function MapScreen() {
   });
   const [hazardExpanded, setHazardExpanded] = useState(true);
 
+  // ─── Field notes ───
+  const [features, setFeatures] = useState<NoteFeature[]>([]);
+  const [showNotePanel, setShowNotePanel] = useState(false);
+  const [drawMode, setDrawMode] = useState<DrawMode | null>(null);
+  const [pendingGeometry, setPendingGeometry] = useState<NoteGeometry | null>(null);
+  const [editingFeature, setEditingFeature] = useState<NoteFeature | null>(null);
+  const importInputRef = useRef<HTMLInputElement | null>(null);
+  const { recording, start: startRecording, stop: stopRecording, addPoint } = useTrackRecorder();
+  const [recordingNow, setRecordingNow] = useState(0);
 
   const { location, error, isLoading, getCurrentPosition } = useLocation({
     enabled: true,
     distanceInterval: 5,
     timeInterval: 3000,
   });
+
+  // Feed GPS updates into the track recorder
+  useEffect(() => {
+    if (location && recording.isRecording) {
+      addPoint(location);
+    }
+  }, [location, recording.isRecording, addPoint]);
+
+  // Live-render the in-progress track on the map
+  useEffect(() => {
+    if (!mapLoaded) return;
+    mapRef.current?.updateRecordingTrack(recording.isRecording ? recording.coords : null);
+  }, [recording, mapLoaded]);
+
+  // Tick every second while recording so elapsed time stays fresh
+  useEffect(() => {
+    if (!recording.isRecording) return;
+    const timer = setInterval(() => setRecordingNow(Date.now()), 1000);
+    setRecordingNow(Date.now());
+    return () => clearInterval(timer);
+  }, [recording.isRecording]);
+
+  // Sync saved features to the map
+  useEffect(() => {
+    if (mapLoaded && Platform.OS === 'web') {
+      mapRef.current?.setNoteFeatures(features);
+    }
+  }, [features, mapLoaded]);
 
   // Send location updates to the map
   useEffect(() => {
@@ -166,6 +223,14 @@ export default function MapScreen() {
         }
       } catch (e) {
         console.error('Failed to restore overlays:', e);
+      }
+
+      // Restore saved field notes
+      try {
+        const storedFeatures = await loadAllFeatures();
+        setFeatures(storedFeatures);
+      } catch (e) {
+        console.error('Failed to restore features:', e);
       }
     })();
   }, [mapLoaded]);
@@ -424,6 +489,185 @@ export default function MapScreen() {
       })
     );
   }, []);
+
+  // ─── Field note handlers ────────────────────────────────
+
+  const geometryToNoteType = (geometry: NoteGeometry): NoteFeature['type'] => {
+    switch (geometry.type) {
+      case 'Point': return 'waypoint';
+      case 'LineString': return 'line';
+      case 'Polygon': return 'polygon';
+    }
+  };
+
+  const handleSelectDrawMode = useCallback((mode: DrawMode) => {
+    if (drawMode === mode) {
+      mapRef.current?.cancelDrawing();
+      setDrawMode(null);
+    } else {
+      mapRef.current?.startDrawing(mode);
+      setDrawMode(mode);
+    }
+  }, [drawMode]);
+
+  const handleCancelDraw = useCallback(() => {
+    mapRef.current?.cancelDrawing();
+    setDrawMode(null);
+  }, []);
+
+  const handleDrawComplete = useCallback((geometry: NoteGeometry) => {
+    setDrawMode(null);
+    setPendingGeometry(geometry);
+  }, []);
+
+  const handleSavePending = useCallback((name: string, description: string, color: string) => {
+    if (!pendingGeometry) return;
+    const now = Date.now();
+    const feature: NoteFeature = {
+      id: `note-${now}`,
+      type: geometryToNoteType(pendingGeometry),
+      name,
+      description,
+      color,
+      geometry: pendingGeometry,
+      createdAt: now,
+      updatedAt: now,
+    };
+    setFeatures((prev) => [feature, ...prev]);
+    saveFeature(feature).catch(console.error);
+    setPendingGeometry(null);
+  }, [pendingGeometry]);
+
+  const handleFeaturePress = useCallback((id: string) => {
+    setFeatures((prev) => {
+      const f = prev.find((x) => x.id === id);
+      if (f) setEditingFeature(f);
+      return prev;
+    });
+  }, []);
+
+  const handleEditSave = useCallback((name: string, description: string, color: string) => {
+    if (!editingFeature) return;
+    setFeatures((prev) =>
+      prev.map((f) =>
+        f.id === editingFeature.id
+          ? { ...f, name, description, color, updatedAt: Date.now() }
+          : f
+      )
+    );
+    updateFeatureMeta(editingFeature.id, { name, description, color }).catch(console.error);
+    setEditingFeature(null);
+  }, [editingFeature]);
+
+  const handleDeleteFeature = useCallback((id: string) => {
+    setFeatures((prev) => prev.filter((f) => f.id !== id));
+    deleteFeatureFromDB(id).catch(console.error);
+    setEditingFeature((prev) => (prev?.id === id ? null : prev));
+  }, []);
+
+  const handleZoomToFeature = useCallback((feature: NoteFeature) => {
+    if (feature.geometry.type === 'Point') {
+      const [lng, lat] = feature.geometry.coordinates;
+      mapRef.current?.flyToLocation(lng, lat, 16);
+    } else {
+      const coords =
+        feature.geometry.type === 'LineString'
+          ? feature.geometry.coordinates
+          : feature.geometry.coordinates[0] ?? [];
+      if (coords.length > 0) {
+        mapRef.current?.fitToBounds(coordsBounds(coords));
+      }
+    }
+    if (!isWideScreen) {
+      setShowNotePanel(false);
+    }
+  }, [isWideScreen]);
+
+  const handleToggleRecord = useCallback(() => {
+    if (recording.isRecording) {
+      const track = stopRecording();
+      mapRef.current?.updateRecordingTrack(null);
+      if (track) {
+        setFeatures((prev) => [track, ...prev]);
+        saveFeature(track).catch(console.error);
+        setEditingFeature(track);
+      } else if (Platform.OS === 'web') {
+        alert('記録された移動がありません（2地点以上の移動が必要です）');
+      }
+    } else {
+      startRecording();
+    }
+  }, [recording.isRecording, startRecording, stopRecording]);
+
+  const handleExportGeoJSON = useCallback(() => {
+    if (features.length === 0) return;
+    const stamp = new Date().toISOString().slice(0, 10);
+    downloadFile(featuresToGeoJSON(features), `field-notes-${stamp}.geojson`, 'application/geo+json');
+  }, [features]);
+
+  const handleExportGPX = useCallback(() => {
+    if (features.length === 0) return;
+    const stamp = new Date().toISOString().slice(0, 10);
+    downloadFile(featuresToGPX(features), `field-notes-${stamp}.gpx`, 'application/gpx+xml');
+  }, [features]);
+
+  const handleImport = useCallback(() => {
+    if (Platform.OS !== 'web') return;
+    if (!importInputRef.current) {
+      const input = document.createElement('input');
+      input.type = 'file';
+      input.accept = '.geojson,.json,.gpx';
+      input.style.display = 'none';
+      input.addEventListener('change', async (e) => {
+        const file = (e.target as HTMLInputElement).files?.[0];
+        if (!file) return;
+        try {
+          const text = await file.text();
+          const imported = file.name.toLowerCase().endsWith('.gpx')
+            ? parseGPX(text)
+            : parseGeoJSON(text);
+          if (imported.length === 0) {
+            alert('インポートできる地物が見つかりませんでした');
+            return;
+          }
+          for (const f of imported) {
+            saveFeature(f).catch(console.error);
+          }
+          setFeatures((prev) => [...imported, ...prev]);
+
+          // Fit to imported features
+          const allCoords = imported.flatMap((f) =>
+            f.geometry.type === 'Point'
+              ? [f.geometry.coordinates]
+              : f.geometry.type === 'LineString'
+                ? f.geometry.coordinates
+                : f.geometry.coordinates[0] ?? []
+          );
+          if (allCoords.length > 0) {
+            mapRef.current?.fitToBounds(coordsBounds(allCoords));
+          }
+        } catch (err) {
+          console.error('Import failed:', err);
+          alert('ファイルの読み込みに失敗しました。形式を確認してください。');
+        } finally {
+          input.value = '';
+        }
+      });
+      document.body.appendChild(input);
+      importInputRef.current = input;
+    }
+    importInputRef.current.click();
+  }, []);
+
+  const drawModeHint: Record<DrawMode, string> = {
+    point: '地図をタップしてWaypointを配置',
+    linestring: '地図をタップして頂点を追加 ─ ダブルタップで確定',
+    polygon: '地図をタップして頂点を追加 ─ 始点をタップで確定',
+  };
+
+  const pendingTypeLabel = pendingGeometry
+    ? { Point: 'Waypoint', LineString: 'ライン', Polygon: 'ポリゴン' }[pendingGeometry.type]
+    : '';
 
   const formatCoord = (value: number, isLat: boolean): string => {
     const dir = isLat ? (value >= 0 ? 'N' : 'S') : (value >= 0 ? 'E' : 'W');
@@ -873,6 +1117,8 @@ export default function MapScreen() {
           zoom: 13,
         }}
         onMapLoaded={handleMapLoaded}
+        onDrawComplete={handleDrawComplete}
+        onFeaturePress={handleFeaturePress}
       />
 
       {/* Coordinate overlay bar */}
@@ -921,6 +1167,32 @@ export default function MapScreen() {
             <Ionicons name="warning" size={14} color="#FF6B6B" style={styles.coordIcon} />
             <Text style={[styles.coordText, styles.errorText]}>{error}</Text>
           </View>
+        </View>
+      )}
+
+      {/* Drawing hint banner */}
+      {drawMode && (
+        <View style={[styles.drawHintBar, { top: insets.top + 52 }]}>
+          <Ionicons name="create-outline" size={14} color="#FFF" style={styles.coordIcon} />
+          <Text style={styles.drawHintText}>{drawModeHint[drawMode]}</Text>
+          <TouchableOpacity onPress={handleCancelDraw} activeOpacity={0.7} hitSlop={8}>
+            <Text style={styles.drawHintCancel}>キャンセル</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+
+      {/* Recording status banner */}
+      {recording.isRecording && (
+        <View style={[styles.drawHintBar, styles.recordingBar, { top: insets.top + (drawMode ? 96 : 52) }]}>
+          <View style={styles.recordingDot} />
+          <Text style={styles.drawHintText}>
+            記録中  {formatDistance(recording.distanceM)}
+            {recording.startTime != null &&
+              `  ${formatDuration(Math.max(0, recordingNow - recording.startTime))}`}
+          </Text>
+          <TouchableOpacity onPress={handleToggleRecord} activeOpacity={0.7} hitSlop={8}>
+            <Text style={styles.drawHintCancel}>停止</Text>
+          </TouchableOpacity>
         </View>
       )}
 
@@ -1006,6 +1278,61 @@ export default function MapScreen() {
       >
         <Ionicons name="locate" size={24} color="#4285F4" />
       </TouchableOpacity>
+
+      {/* ─── Draw / record / notes toolbar ─── */}
+      <DrawToolbar
+        bottomInset={insets.bottom}
+        activeMode={drawMode}
+        isRecording={recording.isRecording}
+        notesOpen={showNotePanel}
+        hasNotes={features.length > 0}
+        onSelectMode={handleSelectDrawMode}
+        onToggleRecord={handleToggleRecord}
+        onToggleNotes={() => setShowNotePanel((prev) => !prev)}
+      />
+
+      {/* ─── Field note list panel ─── */}
+      <NotePanel
+        visible={showNotePanel}
+        isWideScreen={isWideScreen}
+        topInset={insets.top}
+        bottomInset={insets.bottom}
+        features={features}
+        onClose={() => setShowNotePanel(false)}
+        onZoomTo={handleZoomToFeature}
+        onEdit={setEditingFeature}
+        onDelete={handleDeleteFeature}
+        onExportGeoJSON={handleExportGeoJSON}
+        onExportGPX={handleExportGPX}
+        onImport={handleImport}
+      />
+
+      {/* ─── Save dialog for a newly drawn note ─── */}
+      <NoteEditDialog
+        visible={pendingGeometry != null}
+        title={`${pendingTypeLabel}を保存`}
+        initialName={
+          pendingGeometry
+            ? `${pendingTypeLabel} ${features.filter((f) => f.type === geometryToNoteType(pendingGeometry)).length + 1}`
+            : ''
+        }
+        initialDescription=""
+        initialColor={NOTE_COLORS[0]}
+        onSave={handleSavePending}
+        onCancel={() => setPendingGeometry(null)}
+      />
+
+      {/* ─── Edit dialog for an existing note ─── */}
+      <NoteEditDialog
+        visible={editingFeature != null}
+        title="ノートを編集"
+        initialName={editingFeature?.name ?? ''}
+        initialDescription={editingFeature?.description ?? ''}
+        initialColor={editingFeature?.color ?? NOTE_COLORS[0]}
+        saveLabel="更新"
+        onSave={handleEditSave}
+        onCancel={() => setEditingFeature(null)}
+      />
     </View>
   );
 }
@@ -1104,6 +1431,42 @@ const styles = StyleSheet.create({
   errorText: {
     color: '#FF6B6B',
   },
+  drawHintBar: {
+    position: 'absolute',
+    alignSelf: 'center',
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(66, 133, 244, 0.92)',
+    borderRadius: 20,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    gap: 8,
+    zIndex: 15,
+    boxShadow: '0px 2px 8px rgba(0, 0, 0, 0.25)',
+    elevation: 5,
+  },
+  recordingBar: {
+    backgroundColor: 'rgba(234, 67, 53, 0.92)',
+  },
+  recordingDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: '#FFFFFF',
+  },
+  drawHintText: {
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: '600',
+    fontVariant: ['tabular-nums'],
+  },
+  drawHintCancel: {
+    color: 'rgba(255, 255, 255, 0.85)',
+    fontSize: 13,
+    fontWeight: '700',
+    textDecorationLine: 'underline',
+    marginLeft: 4,
+  },
   controlButton: {
     position: 'absolute',
     right: 16,
@@ -1151,8 +1514,7 @@ const styles = StyleSheet.create({
     left: 0,
     width: SIDE_PANEL_WIDTH,
     backgroundColor: 'rgba(0, 0, 0, 0.25)',
-    backdropFilter: 'blur(12px)',
-    WebkitBackdropFilter: 'blur(12px)',
+    ...({ backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)' } as object),
     zIndex: 30,
     boxShadow: '2px 0px 16px rgba(0, 0, 0, 0.3), inset 0 0 0 1px rgba(255, 255, 255, 0.08)',
     borderRightWidth: 1,
@@ -1164,8 +1526,7 @@ const styles = StyleSheet.create({
   modalContainer: {
     flex: 1,
     backgroundColor: 'rgba(0, 0, 0, 0.25)',
-    backdropFilter: 'blur(12px)',
-    WebkitBackdropFilter: 'blur(12px)',
+    ...({ backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)' } as object),
   },
 
   // ─── Shared panel styles ──────────────────────
@@ -1228,8 +1589,7 @@ const styles = StyleSheet.create({
   groupContainer: {
     marginBottom: 12,
     backgroundColor: 'rgba(0, 0, 0, 0.15)',
-    backdropFilter: 'blur(8px)',
-    WebkitBackdropFilter: 'blur(8px)',
+    ...({ backdropFilter: 'blur(8px)', WebkitBackdropFilter: 'blur(8px)' } as object),
     borderRadius: 10,
     overflow: 'hidden',
     boxShadow: '0px 2px 8px rgba(0, 0, 0, 0.15), inset 0 0 0 1px rgba(255, 255, 255, 0.08)',

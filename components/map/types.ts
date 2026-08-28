@@ -1,13 +1,22 @@
+import type { NoteFeature, NoteGeometry } from '@/lib/feature-store';
+
 export interface MapOptions {
   center?: [number, number]; // [lng, lat]
   zoom?: number;
   tileUrl?: string;
 }
 
+/** 描画モード（Terra Drawのモード名と対応） */
+export type DrawMode = 'point' | 'linestring' | 'polygon';
+
 export interface MapViewProps {
   options?: MapOptions;
   onMapMoved?: (center: [number, number], zoom: number) => void;
   onMapLoaded?: () => void;
+  /** 描画完了時（点はクリック時、ライン/ポリゴンは確定時） */
+  onDrawComplete?: (geometry: NoteGeometry) => void;
+  /** 保存済みノートFeatureのタップ時 */
+  onFeaturePress?: (id: string) => void;
 }
 
 export type TileSource = 'osm' | 'pmtiles' | 'gsi-pale' | 'gsi-photo' | 'gsi-hillshade';
@@ -44,4 +53,12 @@ export interface MapViewHandle {
   toggleHazardLayer: (id: string, visible: boolean) => void;
   /** Set hazard layer fill opacity */
   setHazardOpacity: (id: string, opacity: number) => void;
+  /** 描画モードを開始（point / linestring / polygon） */
+  startDrawing: (mode: DrawMode) => void;
+  /** 描画を中断して静的モードに戻す */
+  cancelDrawing: () => void;
+  /** 保存済みノートFeatureを地図に反映（全置換） */
+  setNoteFeatures: (features: NoteFeature[]) => void;
+  /** 記録中のGPSトラックを描画（nullで消去） */
+  updateRecordingTrack: (coords: [number, number][] | null) => void;
 }

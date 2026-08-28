@@ -73,6 +73,18 @@ export default forwardRef<MapViewHandle, MapViewProps>(
       setHazardOpacity(id: string, opacity: number) {
         // Not yet implemented for native WebView
       },
+      startDrawing() {
+        // Not yet implemented for native WebView
+      },
+      cancelDrawing() {
+        // Not yet implemented for native WebView
+      },
+      setNoteFeatures() {
+        // Not yet implemented for native WebView
+      },
+      updateRecordingTrack() {
+        // Not yet implemented for native WebView
+      },
     }), [sendCommand]);
 
     const handleMessage = useCallback((event: WebViewMessageEvent) => {

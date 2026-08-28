@@ -3,7 +3,15 @@ import { StyleSheet, View } from 'react-native';
 import maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { Protocol, PMTiles } from 'pmtiles';
-import type { MapViewProps, MapViewHandle, TileSource, OverlayInfo } from './types';
+import {
+  TerraDraw,
+  TerraDrawPointMode,
+  TerraDrawLineStringMode,
+  TerraDrawPolygonMode,
+} from 'terra-draw';
+import { TerraDrawMapLibreGLAdapter } from 'terra-draw-maplibre-gl-adapter';
+import type { MapViewProps, MapViewHandle, TileSource, OverlayInfo, DrawMode } from './types';
+import type { NoteFeature, NoteGeometry } from '@/lib/feature-store';
 import { HAZARD_LAYERS, hazardTileUrl } from '@/lib/hazard-layers';
 
 const DEFAULT_CENTER: [number, number] = [139.6917, 35.6895];
@@ -39,11 +47,24 @@ const pmtilesLayers: maplibregl.LayerSpecification[] = [
   { id: 'pm-labels-roads', type: 'symbol', source: 'pmtiles', 'source-layer': 'roads', minzoom: 13, paint: { 'text-color': '#555555', 'text-halo-color': '#ffffff', 'text-halo-width': 1 }, layout: { visibility: 'none', 'text-field': ['coalesce', ['get', 'name:ja'], ['get', 'name']], 'text-size': 11, 'symbol-placement': 'line', 'text-font': ['Noto Sans Regular'] } },
 ];
 
+const EMPTY_FEATURE_COLLECTION = {
+  type: 'FeatureCollection',
+  features: [],
+} as GeoJSON.FeatureCollection;
+
 export default forwardRef<MapViewHandle, MapViewProps>(
-  function MapView({ options, onMapMoved, onMapLoaded }, ref) {
+  function MapView({ options, onMapMoved, onMapLoaded, onDrawComplete, onFeaturePress }, ref) {
     const mapContainerRef = useRef<HTMLDivElement>(null);
     const mapRef = useRef<maplibregl.Map | null>(null);
     const pulseAnimRef = useRef<number>(0);
+    const drawRef = useRef<TerraDraw | null>(null);
+    const isDrawingRef = useRef(false);
+
+    // Keep latest callbacks without re-initializing the map
+    const onDrawCompleteRef = useRef(onDrawComplete);
+    onDrawCompleteRef.current = onDrawComplete;
+    const onFeaturePressRef = useRef(onFeaturePress);
+    onFeaturePressRef.current = onFeaturePress;
 
     const center = options?.center ?? DEFAULT_CENTER;
     const zoom = options?.zoom ?? DEFAULT_ZOOM;
@@ -176,7 +197,7 @@ export default forwardRef<MapViewHandle, MapViewProps>(
           map.fitBounds(bounds, { padding: 20, duration: 1500 });
 
           const name = id;
-          return { id, name, bounds, opacity: 0.8 };
+          return { id, name, bounds, opacity: 0.8, visible: true, groupId: 'default' };
         } catch (e) {
           console.error('Failed to add raster overlay:', e);
           return null;
@@ -292,6 +313,63 @@ export default forwardRef<MapViewHandle, MapViewProps>(
         const fillId = `${id}-fill`;
         if (map.getLayer(fillId)) {
           map.setPaintProperty(fillId, 'fill-opacity', opacity);
+        }
+      },
+
+      startDrawing(mode: DrawMode) {
+        const draw = drawRef.current;
+        const map = mapRef.current;
+        if (!draw || !map) return;
+        draw.setMode(mode);
+        isDrawingRef.current = true;
+        map.getCanvas().style.cursor = 'crosshair';
+      },
+
+      cancelDrawing() {
+        const draw = drawRef.current;
+        const map = mapRef.current;
+        if (!draw || !map) return;
+        draw.clear();
+        draw.setMode('static');
+        isDrawingRef.current = false;
+        map.getCanvas().style.cursor = '';
+      },
+
+      setNoteFeatures(features: NoteFeature[]) {
+        const map = mapRef.current;
+        if (!map) return;
+        const source = map.getSource('note-features') as maplibregl.GeoJSONSource | undefined;
+        if (!source) return;
+
+        source.setData({
+          type: 'FeatureCollection',
+          features: features.map((f) => ({
+            type: 'Feature',
+            geometry: f.geometry,
+            properties: {
+              id: f.id,
+              name: f.name,
+              color: f.color,
+              noteType: f.type,
+            },
+          })),
+        } as GeoJSON.FeatureCollection);
+      },
+
+      updateRecordingTrack(coords: [number, number][] | null) {
+        const map = mapRef.current;
+        if (!map) return;
+        const source = map.getSource('recording-track') as maplibregl.GeoJSONSource | undefined;
+        if (!source) return;
+
+        if (!coords || coords.length < 2) {
+          source.setData(EMPTY_FEATURE_COLLECTION);
+        } else {
+          source.setData({
+            type: 'Feature',
+            geometry: { type: 'LineString', coordinates: coords },
+            properties: {},
+          } as GeoJSON.Feature);
         }
       },
     }), []);
@@ -423,6 +501,139 @@ export default forwardRef<MapViewHandle, MapViewProps>(
           layout: { visibility: 'none' },
         });
 
+        // ─── Field note layers (below GPS marker) ───
+        const beforeGps = 'user-location-accuracy';
+
+        map.addSource('note-features', {
+          type: 'geojson',
+          data: EMPTY_FEATURE_COLLECTION,
+        });
+        map.addSource('recording-track', {
+          type: 'geojson',
+          data: EMPTY_FEATURE_COLLECTION,
+        });
+
+        map.addLayer({
+          id: 'note-polygons-fill',
+          type: 'fill',
+          source: 'note-features',
+          filter: ['==', ['geometry-type'], 'Polygon'],
+          paint: {
+            'fill-color': ['get', 'color'],
+            'fill-opacity': 0.25,
+          },
+        }, beforeGps);
+
+        map.addLayer({
+          id: 'note-polygons-outline',
+          type: 'line',
+          source: 'note-features',
+          filter: ['==', ['geometry-type'], 'Polygon'],
+          paint: {
+            'line-color': ['get', 'color'],
+            'line-width': 2,
+          },
+        }, beforeGps);
+
+        map.addLayer({
+          id: 'note-lines',
+          type: 'line',
+          source: 'note-features',
+          filter: ['==', ['geometry-type'], 'LineString'],
+          layout: { 'line-cap': 'round', 'line-join': 'round' },
+          paint: {
+            'line-color': ['get', 'color'],
+            'line-width': 3,
+          },
+        }, beforeGps);
+
+        map.addLayer({
+          id: 'note-points',
+          type: 'circle',
+          source: 'note-features',
+          filter: ['==', ['geometry-type'], 'Point'],
+          paint: {
+            'circle-radius': 7,
+            'circle-color': ['get', 'color'],
+            'circle-stroke-color': '#FFFFFF',
+            'circle-stroke-width': 2,
+          },
+        }, beforeGps);
+
+        map.addLayer({
+          id: 'note-labels',
+          type: 'symbol',
+          source: 'note-features',
+          filter: ['==', ['geometry-type'], 'Point'],
+          layout: {
+            'text-field': ['get', 'name'],
+            'text-size': 12,
+            'text-offset': [0, 1.1],
+            'text-anchor': 'top',
+            'text-font': ['Noto Sans Regular'],
+            'text-optional': true,
+          },
+          paint: {
+            'text-color': '#222222',
+            'text-halo-color': '#FFFFFF',
+            'text-halo-width': 1.5,
+          },
+        }, beforeGps);
+
+        map.addLayer({
+          id: 'recording-track-line',
+          type: 'line',
+          source: 'recording-track',
+          layout: { 'line-cap': 'round', 'line-join': 'round' },
+          paint: {
+            'line-color': '#EA4335',
+            'line-width': 4,
+            'line-dasharray': [0.5, 1.5],
+          },
+        }, beforeGps);
+
+        // Tap on saved notes → notify parent (disabled while drawing)
+        const clickableLayers = ['note-points', 'note-lines', 'note-polygons-fill'];
+        for (const layerId of clickableLayers) {
+          map.on('click', layerId, (e) => {
+            if (isDrawingRef.current) return;
+            const id = e.features?.[0]?.properties?.id;
+            if (id != null) onFeaturePressRef.current?.(String(id));
+          });
+          map.on('mouseenter', layerId, () => {
+            if (!isDrawingRef.current) map.getCanvas().style.cursor = 'pointer';
+          });
+          map.on('mouseleave', layerId, () => {
+            if (!isDrawingRef.current) map.getCanvas().style.cursor = '';
+          });
+        }
+
+        // ─── Terra Draw ───
+        const draw = new TerraDraw({
+          adapter: new TerraDrawMapLibreGLAdapter({ map }),
+          modes: [
+            new TerraDrawPointMode(),
+            new TerraDrawLineStringMode(),
+            new TerraDrawPolygonMode(),
+          ],
+        });
+        draw.start();
+        draw.setMode('static');
+        drawRef.current = draw;
+
+        draw.on('finish', (featureId, context) => {
+          if (context.action !== 'draw') return;
+          const feature = draw.getSnapshot().find((f) => f.id === featureId);
+          if (!feature) return;
+
+          const geometry = feature.geometry as NoteGeometry;
+          draw.clear();
+          draw.setMode('static');
+          isDrawingRef.current = false;
+          map.getCanvas().style.cursor = '';
+          onDrawCompleteRef.current?.(geometry);
+        });
+
         // Pulse animation
         let pulseDir = 1;
         let pulseR = 18;
@@ -454,6 +665,10 @@ export default forwardRef<MapViewHandle, MapViewProps>(
 
       return () => {
         cancelAnimationFrame(pulseAnimRef.current);
+        if (drawRef.current?.enabled) {
+          drawRef.current.stop();
+        }
+        drawRef.current = null;
         map.remove();
         mapRef.current = null;
       };
