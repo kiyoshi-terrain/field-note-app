@@ -7,8 +7,11 @@ import type { NoteFeature, NoteFeatureType, NoteGeometry } from './feature-store
 
 // ─── Export ─────────────────────────────────────────────
 
-/** 全ノートをGeoJSON FeatureCollection文字列に変換 */
-export function featuresToGeoJSON(features: NoteFeature[]): string {
+/** 全ノートをGeoJSON FeatureCollection文字列に変換（写真は枚数のみ記録） */
+export function featuresToGeoJSON(
+  features: NoteFeature[],
+  photoCounts: Record<string, number> = {},
+): string {
   const collection = {
     type: 'FeatureCollection',
     features: features.map((f) => ({
@@ -21,6 +24,7 @@ export function featuresToGeoJSON(features: NoteFeature[]): string {
         color: f.color,
         noteType: f.type,
         createdAt: new Date(f.createdAt).toISOString(),
+        ...((photoCounts[f.id] ?? 0) > 0 ? { photoCount: photoCounts[f.id] } : {}),
         ...(f.stats
           ? {
               distanceM: Math.round(f.stats.distanceM),

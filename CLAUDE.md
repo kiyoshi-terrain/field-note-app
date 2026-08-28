@@ -22,7 +22,7 @@
 9. ✅ 計測表示（ライン距離・ポリゴン面積/周囲長をノート一覧に自動表示）※単体の計測モードは未実装
 
 ### Phase 4: フィールド向け強化
-10. 🔶 Waypoint写真撮影（カメラ連携）
+10. ✅ Waypoint写真撮影（カメラ・フォトライブラリ添付、IndexedDB保存）※Web版・全ノート種別対応
 11. 🔶 座標・コンパスオーバーレイ表示（座標バーは実装済み）
 12. 🔶 ダークアウトドアテーマ（フォレストグリーン + アンバー）
 
@@ -63,8 +63,10 @@ hooks/
   use-location.ts      GPS位置取得フック
   use-track-recorder.ts GPSトラック記録フック
 lib/
+  db.ts                IndexedDB共有オープン処理（バージョン管理はここに一本化）
   overlay-store.ts     PMTilesオーバーレイのIndexedDB永続化
   feature-store.ts     フィールドノートのIndexedDB永続化
+  photo-store.ts       ノート添付写真の保存と画像圧縮
   feature-io.ts        GeoJSON / GPX 入出力
   geo-utils.ts         距離・面積・方位計算とフォーマッタ
   hazard-layers.ts     MLITハザードレイヤー定義

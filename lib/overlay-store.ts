@@ -3,10 +3,7 @@
  * Persists overlay binary data + metadata so they survive page reloads.
  */
 
-const DB_NAME = 'FieldNoteApp';
-const DB_VERSION = 2;
-const OVERLAY_STORE = 'overlays';
-const GROUP_STORE = 'overlay-groups';
+import { openDB, OVERLAY_STORE, GROUP_STORE } from './db';
 
 export interface StoredOverlay {
   id: string;
@@ -25,29 +22,6 @@ export interface StoredGroup {
   name: string;
   expanded: boolean;
   order: number;
-}
-
-function openDB(): Promise<IDBDatabase> {
-  return new Promise((resolve, reject) => {
-    const req = indexedDB.open(DB_NAME, DB_VERSION);
-    req.onupgradeneeded = (event) => {
-      const db = req.result;
-      const oldVersion = event.oldVersion;
-
-      // v1 → v2 migration: add overlay-groups store + new fields
-      if (oldVersion < 1) {
-        db.createObjectStore(OVERLAY_STORE, { keyPath: 'id' });
-      }
-      if (oldVersion < 2) {
-        if (!db.objectStoreNames.contains(GROUP_STORE)) {
-          db.createObjectStore(GROUP_STORE, { keyPath: 'id' });
-        }
-        // Existing overlay records will get defaults when read
-      }
-    };
-    req.onsuccess = () => resolve(req.result);
-    req.onerror = () => reject(req.error);
-  });
 }
 
 /** Normalize legacy records that lack visible/groupId fields */

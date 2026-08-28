@@ -17,7 +17,13 @@ import MapView from '@/components/map/MapView';
 import type { MapViewHandle, TileSource, OverlayInfo, OverlayGroup, DrawMode } from '@/components/map/types';
 import NotePanel from '@/components/notes/NotePanel';
 import DrawToolbar from '@/components/notes/DrawToolbar';
-import NoteEditDialog, { NOTE_COLORS } from '@/components/notes/NoteEditDialog';
+import NoteEditDialog, { NOTE_COLORS, type PhotoChanges } from '@/components/notes/NoteEditDialog';
+import {
+  savePhoto,
+  deletePhoto,
+  deletePhotosForFeature,
+  loadPhotoCounts,
+} from '@/lib/photo-store';
 import { useLocation } from '@/hooks/use-location';
 import { useTrackRecorder } from '@/hooks/use-track-recorder';
 import {
@@ -120,6 +126,7 @@ export default function MapScreen() {
   const [drawMode, setDrawMode] = useState<DrawMode | null>(null);
   const [pendingGeometry, setPendingGeometry] = useState<NoteGeometry | null>(null);
   const [editingFeature, setEditingFeature] = useState<NoteFeature | null>(null);
+  const [photoCounts, setPhotoCounts] = useState<Record<string, number>>({});
   const importInputRef = useRef<HTMLInputElement | null>(null);
   const { recording, start: startRecording, stop: stopRecording, addPoint } = useTrackRecorder();
   const [recordingNow, setRecordingNow] = useState(0);
@@ -225,10 +232,11 @@ export default function MapScreen() {
         console.error('Failed to restore overlays:', e);
       }
 
-      // Restore saved field notes
+      // Restore saved field notes & photo counts
       try {
         const storedFeatures = await loadAllFeatures();
         setFeatures(storedFeatures);
+        setPhotoCounts(await loadPhotoCounts());
       } catch (e) {
         console.error('Failed to restore features:', e);
       }
@@ -520,7 +528,30 @@ export default function MapScreen() {
     setPendingGeometry(geometry);
   }, []);
 
-  const handleSavePending = useCallback((name: string, description: string, color: string) => {
+  /** 写真の追加・削除をIndexedDBに反映し、一覧の枚数表示を更新する */
+  const applyPhotoChanges = useCallback((featureId: string, photos: PhotoChanges) => {
+    const now = Date.now();
+    photos.added.forEach((blob, i) => {
+      savePhoto({
+        id: `photo-${now}-${i}-${Math.random().toString(36).slice(2, 8)}`,
+        featureId,
+        blob,
+        createdAt: now + i,
+      }).catch(console.error);
+    });
+    for (const id of photos.deletedIds) {
+      deletePhoto(id).catch(console.error);
+    }
+    const delta = photos.added.length - photos.deletedIds.length;
+    if (delta !== 0) {
+      setPhotoCounts((prev) => ({
+        ...prev,
+        [featureId]: Math.max(0, (prev[featureId] ?? 0) + delta),
+      }));
+    }
+  }, []);
+
+  const handleSavePending = useCallback((name: string, description: string, color: string, photos: PhotoChanges) => {
     if (!pendingGeometry) return;
     const now = Date.now();
     const feature: NoteFeature = {
@@ -535,8 +566,9 @@ export default function MapScreen() {
     };
     setFeatures((prev) => [feature, ...prev]);
     saveFeature(feature).catch(console.error);
+    applyPhotoChanges(feature.id, photos);
     setPendingGeometry(null);
-  }, [pendingGeometry]);
+  }, [pendingGeometry, applyPhotoChanges]);
 
   const handleFeaturePress = useCallback((id: string) => {
     setFeatures((prev) => {
@@ -546,7 +578,7 @@ export default function MapScreen() {
     });
   }, []);
 
-  const handleEditSave = useCallback((name: string, description: string, color: string) => {
+  const handleEditSave = useCallback((name: string, description: string, color: string, photos: PhotoChanges) => {
     if (!editingFeature) return;
     setFeatures((prev) =>
       prev.map((f) =>
@@ -556,12 +588,19 @@ export default function MapScreen() {
       )
     );
     updateFeatureMeta(editingFeature.id, { name, description, color }).catch(console.error);
+    applyPhotoChanges(editingFeature.id, photos);
     setEditingFeature(null);
-  }, [editingFeature]);
+  }, [editingFeature, applyPhotoChanges]);
 
   const handleDeleteFeature = useCallback((id: string) => {
     setFeatures((prev) => prev.filter((f) => f.id !== id));
     deleteFeatureFromDB(id).catch(console.error);
+    deletePhotosForFeature(id).catch(console.error);
+    setPhotoCounts((prev) => {
+      const next = { ...prev };
+      delete next[id];
+      return next;
+    });
     setEditingFeature((prev) => (prev?.id === id ? null : prev));
   }, []);
 
@@ -602,8 +641,8 @@ export default function MapScreen() {
   const handleExportGeoJSON = useCallback(() => {
     if (features.length === 0) return;
     const stamp = new Date().toISOString().slice(0, 10);
-    downloadFile(featuresToGeoJSON(features), `field-notes-${stamp}.geojson`, 'application/geo+json');
-  }, [features]);
+    downloadFile(featuresToGeoJSON(features, photoCounts), `field-notes-${stamp}.geojson`, 'application/geo+json');
+  }, [features, photoCounts]);
 
   const handleExportGPX = useCallback(() => {
     if (features.length === 0) return;
@@ -1298,6 +1337,7 @@ export default function MapScreen() {
         topInset={insets.top}
         bottomInset={insets.bottom}
         features={features}
+        photoCounts={photoCounts}
         onClose={() => setShowNotePanel(false)}
         onZoomTo={handleZoomToFeature}
         onEdit={setEditingFeature}
@@ -1318,6 +1358,7 @@ export default function MapScreen() {
         }
         initialDescription=""
         initialColor={NOTE_COLORS[0]}
+        featureId={null}
         onSave={handleSavePending}
         onCancel={() => setPendingGeometry(null)}
       />
@@ -1329,6 +1370,7 @@ export default function MapScreen() {
         initialName={editingFeature?.name ?? ''}
         initialDescription={editingFeature?.description ?? ''}
         initialColor={editingFeature?.color ?? NOTE_COLORS[0]}
+        featureId={editingFeature?.id ?? null}
         saveLabel="更新"
         onSave={handleEditSave}
         onCancel={() => setEditingFeature(null)}

@@ -3,11 +3,7 @@
  * 既存の FieldNoteApp DB を v3 に上げて 'features' ストアを追加する。
  */
 
-const DB_NAME = 'FieldNoteApp';
-const DB_VERSION = 3;
-const OVERLAY_STORE = 'overlays';
-const GROUP_STORE = 'overlay-groups';
-const FEATURE_STORE = 'features';
+import { openDB, FEATURE_STORE } from './db';
 
 export type NoteFeatureType = 'waypoint' | 'line' | 'polygon' | 'track';
 
@@ -48,32 +44,6 @@ export interface NoteFeature {
   updatedAt: number;
   /** トラック記録の統計（type === 'track' のみ） */
   stats?: TrackStats;
-}
-
-function openDB(): Promise<IDBDatabase> {
-  return new Promise((resolve, reject) => {
-    const req = indexedDB.open(DB_NAME, DB_VERSION);
-    req.onupgradeneeded = (event) => {
-      const db = req.result;
-      const oldVersion = event.oldVersion;
-
-      if (oldVersion < 1) {
-        db.createObjectStore(OVERLAY_STORE, { keyPath: 'id' });
-      }
-      if (oldVersion < 2) {
-        if (!db.objectStoreNames.contains(GROUP_STORE)) {
-          db.createObjectStore(GROUP_STORE, { keyPath: 'id' });
-        }
-      }
-      if (oldVersion < 3) {
-        if (!db.objectStoreNames.contains(FEATURE_STORE)) {
-          db.createObjectStore(FEATURE_STORE, { keyPath: 'id' });
-        }
-      }
-    };
-    req.onsuccess = () => resolve(req.result);
-    req.onerror = () => reject(req.error);
-  });
 }
 
 export async function saveFeature(feature: NoteFeature): Promise<void> {
