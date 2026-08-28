@@ -52,6 +52,17 @@ const EMPTY_FEATURE_COLLECTION = {
   features: [],
 } as GeoJSON.FeatureCollection;
 
+/**
+ * ラスターオーバーレイ・ハザードレイヤーの挿入位置。
+ * ノートレイヤー群の直下に入れることで、後から追加しても
+ * ノート（描画・Waypoint・トラック）とGPSマーカーが常に上に来る。
+ */
+function overlayBeforeId(map: maplibregl.Map): string | undefined {
+  if (map.getLayer('note-polygons-fill')) return 'note-polygons-fill';
+  if (map.getLayer('user-location-accuracy')) return 'user-location-accuracy';
+  return undefined;
+}
+
 export default forwardRef<MapViewHandle, MapViewProps>(
   function MapView({ options, onMapMoved, onMapLoaded, onDrawComplete, onFeaturePress }, ref) {
     const mapContainerRef = useRef<HTMLDivElement>(null);
@@ -183,8 +194,8 @@ export default forwardRef<MapViewHandle, MapViewProps>(
             tileSize: 256,
           });
 
-          // Insert overlay layer below GPS layers
-          const beforeLayerId = map.getLayer('user-location-accuracy') ? 'user-location-accuracy' : undefined;
+          // Insert overlay layer below note & GPS layers
+          const beforeLayerId = overlayBeforeId(map);
 
           map.addLayer({
             id: layerId,
@@ -246,9 +257,7 @@ export default forwardRef<MapViewHandle, MapViewProps>(
         const map = mapRef.current;
         if (!map) return;
 
-        const beforeLayerId = map.getLayer('user-location-accuracy')
-          ? 'user-location-accuracy'
-          : undefined;
+        const beforeLayerId = overlayBeforeId(map);
 
         for (const layer of HAZARD_LAYERS) {
           // Skip if already added
